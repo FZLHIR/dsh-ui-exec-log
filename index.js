@@ -549,8 +549,22 @@ function readBody(req) {
   });
 }
 
+/**
+ * Wait for the browser HTTP carrier before mounting.
+ *
+ * `apply` used to read `ctx.get("webServer")` immediately and bail out when the
+ * service was not available yet. On a cold boot the entry is composed before the
+ * webserver row settles, so the early return skipped every route registration:
+ * the panel then reported the Host half as missing ("restart DSH"), and a restart
+ * reproduced the same skip instead of fixing it. Declaring the dependency makes
+ * Cordis hold this plugin until the service exists.
+ */
+export const inject = ["webServer"];
+
 /** The Host half: two read/write routes over the Session store. */
 export function apply(ctx) {
+  // Defensive: with `inject` above this is only reachable in a composition that
+  // provides no browser carrier at all, where a silent return is the right answer.
   const server = typeof ctx.get === "function" ? ctx.get("webServer") : undefined;
   if (server === undefined || server === null) return;
   const agents = typeof ctx.get === "function" ? ctx.get("agents") : undefined;
