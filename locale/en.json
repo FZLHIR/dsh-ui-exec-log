@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "title": "FZL's DSH Toolkit",
+    "description": "Toolkit: execution log, plain plugin view, and session deletion, each with its own switch."
+  },
+  "toolkitNav": "FZL Toolkit",
+  "toolkitTitle": "FZL's DSH Toolkit",
+  "toolkitDescription": "A set of small utilities shipped by this package; each one switches on its own."
+}

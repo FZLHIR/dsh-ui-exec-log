@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "title": "FZL的DSH优化集",
+    "description": "工具集：执行轨迹、插件白话视图与会话删除，每项功能可单独启停。"
+  },
+  "toolkitNav": "FZL 优化集",
+  "toolkitTitle": "FZL的DSH优化集",
+  "toolkitDescription": "本插件的一组实用功能，逐项独立启停。"
+}

@@ -1,0 +1,9 @@
+# Bundle layer for @local/dsh-ui-exec-log.
+#
+# One plugin, one row in the plugin list; its individual features (execution log,
+# plain plugin view, session deletion) are switched from the plugin's own
+# Settings page, so the row itself stays on.
+- insert:
+    - id: ui-exec-log
+      name: '@local/dsh-ui-exec-log'
+      disabled: false
