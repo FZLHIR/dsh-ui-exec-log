@@ -14,11 +14,24 @@ DSH 插件：右侧「执行轨迹」面板 + 会话删除。
 
 ## 安装
 
-DSH 里「添加插件」对话框支持三种输入：
+在 DSH 的「添加插件」对话框里填：
 
-1. 本地目录：把本仓库目录填入（含本 `package.json` 的那层）；
-2. GitHub：`https://github.com/<user>/dsh-ui-exec-log`；
-3. npm 包名（需先发布）。
+1. **GitHub（推荐）**：`https://github.com/FZLHIR/dsh-ui-exec-log`
+
+   profile 记录的规格是 `github:FZLHIR/dsh-ui-exec-log`；包被装进 profile 自己的
+   `node_modules`，与本地仓库目录无关 —— 之后删掉或移动克隆都不影响加载。
+
+2. **本地目录（仅开发用）**：填仓库目录（含本 `package.json` 的那层）。
+
+   这条路径 pnpm 建的是**符号链接**：`node_modules/@local/dsh-ui-exec-log` 直接
+   指向该目录。好处是改完即时生效，代价是：
+
+   - 不要删除或移动源目录，否则下次加载会 `ENOENT`；
+   - 想换成 GitHub 安装时，先卸载旧的本地依赖并**重启 DSH**。运行中的宿主会缓存
+     旧解析路由，只换安装源、不重启，会出现
+     「组件启用失败 … failed to import: Error: ENOENT: no such file or directory」。
+
+npm 暂不支持：包名在 `@local` 作用域下，无法发布到公共 registry。
 
 装完在「插件」页启用该 bundle，重载界面即可在右侧栏看到「执行轨迹」。
 

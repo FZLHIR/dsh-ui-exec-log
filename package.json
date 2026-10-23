@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-ui-exec-log",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "FZL's DSH toolkit: execution trace panel and session deletion, each with its own switch.",
   "type": "module",
