@@ -180,24 +180,11 @@ assert.deepEqual(
 
 // --- About DSH: the pure half of the layout page -------------------------
 
-const { pluginGraph, unwrapRemote, childPath, layoutUrl } = exports.__internals;
+const { pluginGraph, layoutUrl } = exports.__internals;
 
-// Path joining follows the separator the parent already uses.
-assert.equal(childPath("D:\\P\\DSH", "APP"), "D:\\P\\DSH\\APP");
-assert.equal(childPath("D:\\P\\DSH\\", "APP"), "D:\\P\\DSH\\APP");
-assert.equal(childPath("/usr/local", "bin"), "/usr/local/bin");
-assert.equal(childPath("", "APP"), "APP");
-
-// The route carries a level only when one is named.
-assert.equal(layoutUrl("", false), "/fzl-toolkit/layout");
-assert.equal(layoutUrl("D:\\P\\DSH", false), "/fzl-toolkit/layout?path=D%3A%5CP%5CDSH");
+// The route asks for the framework; `refresh=1` is the explicit rescan.
+assert.equal(layoutUrl(undefined, false), "/fzl-toolkit/layout");
 assert.equal(layoutUrl(undefined, true), "/fzl-toolkit/layout?refresh=1");
-
-// Remote answers unwrap both ways, and a failure is `undefined` rather than a throw.
-assert.equal(unwrapRemote({ ok: true, value: [1] }).length, 1);
-assert.equal(unwrapRemote({ ok: false, error: { code: "x" } }), undefined);
-assert.deepEqual(unwrapRemote([1, 2]), [1, 2]);
-assert.equal(unwrapRemote(undefined), undefined);
 
 // A bundle row resolves to its live entry by entry id first, module name second.
 const bundles = [

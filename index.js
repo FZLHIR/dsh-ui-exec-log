@@ -504,24 +504,25 @@ async function removeSession(ctx, home, sessionId) {
 }
 
 /* ------------------------------------------------------------------ *
- * The installation layout: what this DSH is made of, on disk.
+ * The installation framework: what this DSH is made of, and where.
  *
- * Both halves of the settings page read from here: the tree pane fetches
- * one level at a time, and the header takes the same first level for its
- * size summary. Sizes are deliberately bounded - a bounded scan answers
- * `truncated: true` and the page prints `>=` instead of pretending to
- * know a number it stopped counting.
+ * This is not a file browser. It names the handful of places one install
+ * always has - the launcher, the app, the harness runtime, the data home,
+ * the profile, the session log, the workspace - and says what each one is
+ * for, with a size where a size is cheap to learn. The plugin pane comes
+ * from the Host's own services, not from a Client Remote the plugin may
+ * not be allowed to call.
  * ------------------------------------------------------------------ */
 
 const ROUTE_LAYOUT = PREFIX + "/layout";
-const LAYOUT_MAX_ENTRIES = 500;
 const LAYOUT_SCAN_BUDGET_MS = 600;
 const LAYOUT_SCAN_MAX_ENTRIES = 20000;
 const LAYOUT_CACHE_MS = 20000;
-const LAYOUT_CACHE_LIMIT = 400;
 
 /** Directory scans, keyed by absolute path; sizes are the expensive part. */
 const layoutScans = new Map();
+/** The composed answer, reused for `LAYOUT_CACHE_MS`. */
+let layoutComposed;
 
 /** The installation root that owns this data home. */
 function installRoot(home) {
@@ -530,25 +531,13 @@ function installRoot(home) {
   return home;
 }
 
-/**
- * Resolve `target` only when it stays inside `root`.
- *
- * `path.relative` answers an absolute path when the two are on different
- * drives and a `..` prefix when they diverge, so both are refused; a
- * resolved path equal to the root itself is the root.
- */
-function insideRoot(root, target) {
-  if (typeof target !== "string" || target.trim() === "") return undefined;
-  let resolved;
+async function exists(target) {
   try {
-    resolved = path.resolve(target);
+    await fs.access(target);
+    return true;
   } catch (error) {
-    return undefined;
+    return false;
   }
-  const relative = path.relative(root, resolved);
-  if (relative === "") return resolved;
-  if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
-  return resolved;
 }
 
 async function isDirectory(target) {
@@ -563,7 +552,7 @@ async function isDirectory(target) {
  * Total bytes of one tree under a time and entry budget.
  *
  * Symlinks are counted as entries but never followed: a pnpm profile links
- * its packages into `.pnpm`, and following those would walk the same files
+ * its packages into `.pnpm`, and following those would count the same files
  * more than once - or forever, on a cycle.
  */
 async function scanTreeBounded(directory) {
@@ -595,8 +584,7 @@ async function scanTreeBounded(directory) {
         continue;
       }
       try {
-        const stats = await fs.stat(child);
-        bytes += stats.size;
+        bytes += (await fs.stat(child)).size;
         files += 1;
       } catch (error) {
         // A link to a vanished target, or a file we may not stat, is skipped.
@@ -611,50 +599,10 @@ async function scanTreeCached(directory, refresh) {
   const now = Date.now();
   const cached = layoutScans.get(directory);
   if (refresh !== true && cached !== undefined && now - cached.at < LAYOUT_CACHE_MS) return cached.value;
-  if (layoutScans.size > LAYOUT_CACHE_LIMIT) layoutScans.clear();
+  if (layoutScans.size > 400) layoutScans.clear();
   const value = await scanTreeBounded(directory);
   layoutScans.set(directory, { at: now, value });
   return value;
-}
-
-/** One directory level, with directory sizes resolved through the cache. */
-async function listLayoutLevel(directory, refresh) {
-  let dirents;
-  try {
-    dirents = await fs.readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    return { entries: [], total: 0, more: 0, error: "unreadable" };
-  }
-  const entries = [];
-  let listed = 0;
-  for (const dirent of dirents) {
-    if (listed >= LAYOUT_MAX_ENTRIES) break;
-    listed += 1;
-    const full = path.join(directory, dirent.name);
-    if (dirent.isDirectory()) {
-      const scan = await scanTreeCached(full, refresh);
-      entries.push({
-        name: dirent.name,
-        kind: "dir",
-        bytes: scan.bytes,
-        files: scan.files,
-        children: scan.children,
-        truncated: scan.truncated,
-      });
-      continue;
-    }
-    if (dirent.isSymbolicLink()) {
-      entries.push({ name: dirent.name, kind: "link" });
-      continue;
-    }
-    const stats = await fs.stat(full).catch(() => undefined);
-    entries.push({ name: dirent.name, kind: "file", bytes: stats === undefined ? 0 : stats.size });
-  }
-  entries.sort((left, right) => {
-    if (left.kind === right.kind) return left.name.localeCompare(right.name);
-    return left.kind === "dir" ? -1 : 1;
-  });
-  return { entries, total: dirents.length, more: Math.max(0, dirents.length - listed), error: undefined };
 }
 
 /** This installation's version, from the packaged manifest. */
@@ -696,28 +644,153 @@ async function profileNames(home) {
   return names;
 }
 
-/** The whole picture: paths, version, profile, and the first level with sizes. */
-async function layoutOverview(home, refresh) {
+/**
+ * The named places one installation is made of.
+ *
+ * `depth` is the drawing indent, not the disk depth: `data\dsh` sits two
+ * levels down but is described under `data` so the picture stays readable.
+ */
+function frameworkPlan(home, profile) {
+  const root = installRoot(home);
+  const app = path.join(root, "APP");
+  const data = path.dirname(home);
+  const profiles = path.join(home, "profiles");
+  const rows = [
+    { key: "root", path: root, depth: 0, role: "root" },
+    { key: "launcher", path: path.join(root, "DSH.cmd"), depth: 1, role: "launcher" },
+    { key: "app", path: app, depth: 1, role: "app" },
+    { key: "runtime", path: path.join(app, "resources", "app.asar", "dsh"), depth: 2, role: "runtime" },
+    { key: "data", path: data, depth: 1, role: "data" },
+    { key: "home", path: home, depth: 2, role: "home" },
+    { key: "profiles", path: profiles, depth: 3, role: "profiles" },
+    { key: "sessions", path: path.join(home, "sessions"), depth: 3, role: "sessions" },
+    { key: "storages", path: path.join(home, "storages"), depth: 3, role: "storages" },
+    { key: "attachments", path: path.join(home, "attachments"), depth: 3, role: "attachments" },
+    { key: "runtimes", path: path.join(home, "dsh-runtimes"), depth: 3, role: "runtimes" },
+    { key: "workspace", path: path.join(root, "workspace"), depth: 1, role: "workspace" },
+  ];
+  if (profile !== "") rows.splice(7, 0, { key: "profile", path: path.join(profiles, profile), depth: 4, role: "profile" });
+  return rows;
+}
+
+/** The framework rows that exist on this disk, with a size where it is cheap. */
+async function frameworkRows(home, profile, refresh) {
+  const sized = new Set(["app", "home", "workspace"]);
+  const rows = [];
+  for (const row of frameworkPlan(home, profile)) {
+    if ((await exists(row.path)) !== true) continue;
+    const directory = await isDirectory(row.path);
+    const entry = { key: row.key, path: row.path, depth: row.depth, role: row.role, kind: directory ? "dir" : "file" };
+    if (directory) {
+      try {
+        entry.children = (await fs.readdir(row.path, { withFileTypes: true })).length;
+      } catch (error) {
+        entry.children = 0;
+      }
+      if (sized.has(row.key)) {
+        const scan = await scanTreeCached(row.path, refresh);
+        entry.bytes = scan.bytes;
+        entry.truncated = scan.truncated;
+      }
+    } else {
+      try {
+        entry.bytes = (await fs.stat(row.path)).size;
+      } catch (error) {
+        entry.bytes = 0;
+      }
+    }
+    rows.push(entry);
+  }
+  return rows;
+}
+
+/** Which bundles and patch rows this profile is composed from. */
+async function compositionOf(home, profile) {
+  if (profile === "") return undefined;
+  const directory = path.join(home, "profiles", profile);
+  if ((await isDirectory(directory)) !== true) return undefined;
+  let manifest;
+  try {
+    manifest = JSON.parse(await fs.readFile(path.join(directory, "package.json"), "utf8"));
+  } catch (error) {
+    manifest = undefined;
+  }
+  const profileSpec = manifest !== undefined && manifest.dsh !== undefined ? manifest.dsh.profile : undefined;
+  const bundles = profileSpec !== undefined && Array.isArray(profileSpec.bundles) ? profileSpec.bundles.filter((name) => typeof name === "string") : [];
+  let patchIds = [];
+  try {
+    const patch = await fs.readFile(path.join(directory, "cordis.patch.yml"), "utf8");
+    patchIds = [...patch.matchAll(/^-\s+id:\s*(\S+)/gm)].map((match) => match[1]);
+  } catch (error) {
+    patchIds = [];
+  }
+  return { profile, bundles, patchIds };
+}
+
+/** The Loader's live entries plus the profile's bundles, read through Host services. */
+async function pluginFacts(ctx) {
+  const inventoryService = service(ctx, "pluginInventory");
+  const manager = service(ctx, "pluginManager");
+  const facts = { error: "" };
+  try {
+    if (inventoryService !== undefined && typeof inventoryService.list === "function") {
+      const inventory = await inventoryService.list();
+      facts.inventory = {
+        entries: (Array.isArray(inventory.entries) ? inventory.entries : []).map((entry) => ({
+          entryId: typeof entry.entryId === "string" ? entry.entryId : "",
+          moduleName: typeof entry.moduleName === "string" ? entry.moduleName : "",
+          enabled: entry.enabled !== false,
+          fiberPhase: typeof entry.fiberPhase === "string" ? entry.fiberPhase : "",
+        })),
+        presets: (Array.isArray(inventory.agentPresets) ? inventory.agentPresets : []).map((preset) => ({
+          name: typeof preset.name === "string" ? preset.name : typeof preset.id === "string" ? preset.id : "",
+          rows: (Array.isArray(preset.rows) ? preset.rows : []).length,
+        })),
+      };
+    }
+  } catch (error) {
+    facts.error = String(error !== undefined && error !== null && error.message !== undefined ? error.message : error);
+  }
+  try {
+    if (manager !== undefined && typeof manager.listBundles === "function") {
+      const bundles = await manager.listBundles();
+      facts.bundles = (Array.isArray(bundles) ? bundles : []).map((bundle) => ({
+        name: typeof bundle.name === "string" ? bundle.name : "",
+        version: typeof bundle.version === "string" ? bundle.version : "",
+        source: typeof bundle.source === "string" ? bundle.source : "",
+        availability: typeof bundle.availability === "string" ? bundle.availability : "",
+        enabled: bundle.enabled === true,
+        error: bundle.error !== undefined && bundle.error !== null ? String(bundle.error.code === undefined ? bundle.error : bundle.error.code) : "",
+        rows: (Array.isArray(bundle.rows) ? bundle.rows : []).map((row) => ({
+          rowId: typeof row.rowId === "string" ? row.rowId : "",
+          moduleName: typeof row.moduleName === "string" ? row.moduleName : "",
+          entryId: typeof row.entryId === "string" ? row.entryId : "",
+        })),
+      }));
+    }
+  } catch (error) {
+    if (facts.error === "") facts.error = String(error !== undefined && error !== null && error.message !== undefined ? error.message : error);
+  }
+  return facts;
+}
+
+/** The whole picture: paths, version, profile, framework rows, composition, plugins. */
+async function layoutOverview(ctx, home, refresh) {
   const root = installRoot(home);
   const appRoot = path.join(root, "APP");
   const app = await isDirectory(appRoot);
-  const level = await listLayoutLevel(root, refresh);
-  const totals = {};
-  for (const entry of level.entries) {
-    if (entry.kind === "dir" && typeof entry.bytes === "number") totals[entry.name] = entry.bytes;
-  }
   const profiles = await profileNames(home);
+  const profile = profiles.length > 0 ? profiles[0] : "";
   return {
     root,
     home,
     app,
     version: await appVersion(app ? appRoot : root),
     profiles,
-    profile: profiles.length > 0 ? profiles[0] : "",
-    totals,
-    entries: level.entries,
-    total: level.total,
-    more: level.more,
+    profile,
+    rows: await frameworkRows(home, profile, refresh),
+    composition: await compositionOf(home, profile),
+    plugins: await pluginFacts(ctx),
   };
 }
 
@@ -905,8 +978,9 @@ export function apply(ctx) {
     "fzl-toolkit: delete route",
   );
 
-  // The installation layout: the settings page's tree pane asks for one level
-  // at a time, and its header takes the same answer for the size summary.
+  // The installation framework: the settings page asks once and draws the
+  // picture. Sizes and the plugin list are cached briefly, so reopening the
+  // page is free and `refresh=1` is the explicit rescan.
   ctx.effect(
     () =>
       server.register({
@@ -928,33 +1002,19 @@ export function apply(ctx) {
             sendJson(res, 400, { ok: false, error: "bad-request" });
             return;
           }
-          const refresh = url.searchParams.get("refresh") === "1";
-          if (refresh) layoutScans.clear();
-          const home = dataHome();
-          const root = installRoot(home);
-          const requested = url.searchParams.get("path");
+          if (url.searchParams.get("refresh") === "1") {
+            layoutScans.clear();
+            layoutComposed = undefined;
+          }
+          const now = Date.now();
+          if (layoutComposed !== undefined && now - layoutComposed.at < LAYOUT_CACHE_MS) {
+            sendJson(res, 200, { ok: true, revision: 2, ...layoutComposed.value });
+            return;
+          }
           try {
-            if (requested === null) {
-              sendJson(res, 200, { ok: true, revision: 1, ...(await layoutOverview(home, refresh)) });
-              return;
-            }
-            const target = insideRoot(root, requested);
-            if (target === undefined) {
-              sendJson(res, 403, { ok: false, error: "forbidden-path" });
-              return;
-            }
-            if (!(await isDirectory(target))) {
-              sendJson(res, 404, { ok: false, error: "not-a-directory" });
-              return;
-            }
-            sendJson(res, 200, {
-              ok: true,
-              revision: 1,
-              root: root,
-              home: home,
-              path: target,
-              ...(await listLayoutLevel(target, refresh)),
-            });
+            const value = await layoutOverview(ctx, dataHome(), false);
+            layoutComposed = { at: Date.now(), value };
+            sendJson(res, 200, { ok: true, revision: 2, ...value });
           } catch (error) {
             sendJson(res, 500, { ok: false, error: String(error && error.message ? error.message : error) });
           }
@@ -1012,12 +1072,13 @@ export function apply(ctx) {
 export const __internals__ = {
   dataHome,
   installRoot,
-  insideRoot,
-  listLayoutLevel,
-  layoutOverview,
   scanTreeBounded,
   appVersion,
   profileNames,
+  frameworkRows,
+  compositionOf,
+  pluginFacts,
+  layoutOverview,
   listSessions,
   removeSession,
   removeSessionFiles,
