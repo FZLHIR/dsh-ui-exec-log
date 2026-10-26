@@ -1559,6 +1559,35 @@ window.__ModuleLoader__.load({
       "traceOn": "开",
       "traceOff": "关",
       "traceEmpty": "当前会话还没有可显示的轨迹；对话产生第一个步骤后出现。",
+      "aboutNav": "关于 DSH",
+      "aboutTitle": "关于 DSH",
+      "aboutDescription": "本次安装的版本、路径与规模；左侧是磁盘目录，右侧是当前配置档加载的插件。",
+      "aboutVersion": "版本",
+      "aboutProfile": "配置档",
+      "aboutRoot": "安装根",
+      "aboutHome": "数据目录",
+      "aboutRefresh": "重新扫描",
+      "aboutScanning": "扫描中…",
+      "aboutTreeTitle": "目录结构",
+      "aboutTreeHint": "点目录展开一层；只读，不跟随链接。",
+      "aboutPluginsTitle": "插件架构",
+      "aboutPluginsHint": "配置档里的插件包与条目，以及各自是否加载。",
+      "aboutTruncated": "≥",
+      "aboutMore": "另有 {count} 项未列出",
+      "aboutHostDown": "宿主端未加载：重启 DSH 后此处显示目录。",
+      "aboutHostForbidden": "宿主拒绝了该路径（越界或来源校验失败）。",
+      "aboutHostFailed": "读取失败：{reason}",
+      "aboutInventoryDown": "插件清单不可用：宿主未提供 Remote，只显示静态信息。",
+      "aboutInventoryLoading": "读取插件清单…",
+      "aboutInventoryFailed": "插件清单读取失败：{reason}",
+      "aboutAgentPresets": "Agent 预设",
+      "aboutOwnPackage": "本插件",
+      "aboutEntries": "{count} 个条目",
+      "aboutDisabled": "{count} 个停用",
+      "aboutEmptyDir": "空目录",
+      "aboutLink": "链接",
+      "aboutFiber": "阶段 {phase}",
+      "aboutUnreadable": "无法读取",
     };
 
     /** English dictionary, checked against the Chinese key set. */
@@ -1704,6 +1733,35 @@ window.__ModuleLoader__.load({
       "traceOn": "on",
       "traceOff": "off",
       "traceEmpty": "No steps to show yet; the first step of this conversation will appear here.",
+      "aboutNav": "About DSH",
+      "aboutTitle": "About DSH",
+      "aboutDescription": "This installation's version, paths and size; the left pane is the disk layout, the right pane the plugins this profile loads.",
+      "aboutVersion": "Version",
+      "aboutProfile": "Profile",
+      "aboutRoot": "Install root",
+      "aboutHome": "Data home",
+      "aboutRefresh": "Rescan",
+      "aboutScanning": "Scanning...",
+      "aboutTreeTitle": "Directory layout",
+      "aboutTreeHint": "Click a directory to read one level; read-only, links are not followed.",
+      "aboutPluginsTitle": "Plugin architecture",
+      "aboutPluginsHint": "The bundles and entries this profile composes, and whether each one loaded.",
+      "aboutTruncated": "≥",
+      "aboutMore": "{count} more not listed",
+      "aboutHostDown": "Host half not loaded: restart DSH before the tree can appear.",
+      "aboutHostForbidden": "The Host refused this path (outside the root, or a failed origin check).",
+      "aboutHostFailed": "Could not read: {reason}",
+      "aboutInventoryDown": "Plugin inventory unavailable: the Host exposes no Remote, so only static facts are shown.",
+      "aboutInventoryLoading": "Reading the plugin inventory...",
+      "aboutInventoryFailed": "Could not read the plugin inventory: {reason}",
+      "aboutAgentPresets": "Agent presets",
+      "aboutOwnPackage": "this plugin",
+      "aboutEntries": "{count} entries",
+      "aboutDisabled": "{count} disabled",
+      "aboutEmptyDir": "empty",
+      "aboutLink": "link",
+      "aboutFiber": "phase {phase}",
+      "aboutUnreadable": "unreadable",
     };
 
     /** Argument keys worth showing as an action's target text, in priority order. */
@@ -3293,6 +3351,617 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /* ------------------------------------------------------------------ *
+     * About DSH: the installation itself, as one settings page.
+     *
+     * Two panes, two sources. The disk pane reads the Host's `/fzl-toolkit/
+     * layout` route one level at a time, so a huge tree costs nothing until
+     * a directory is opened. The plugin pane reads the same Remote faces the
+     * official Plugins page uses, so it shows what this profile actually
+     * composed instead of a hard-coded list.
+     * ------------------------------------------------------------------ */
+
+    const ABOUT_ROUTE = "/fzl-toolkit/layout";
+
+    /** The layout route with an optional level and refresh flag. */
+    function layoutUrl(path, refresh) {
+      const parts = [];
+      if (typeof path === "string" && path !== "") parts.push("path=" + encodeURIComponent(path));
+      if (refresh === true) parts.push("refresh=1");
+      return parts.length === 0 ? ABOUT_ROUTE : ABOUT_ROUTE + "?" + parts.join("&");
+    }
+
+    /** One layout request; `path` absent asks for the overview. */
+    function layoutRequest(path, refresh) {
+      return toolkitRequest(layoutUrl(path, refresh));
+    }
+
+    /** Join one child onto an absolute path with the separator the parent uses. */
+    function childPath(parent, name) {
+      const separator = typeof parent === "string" && parent.includes("/") && !parent.includes("\\") ? "/" : "\\";
+      if (typeof parent !== "string" || parent === "") return name;
+      return parent.endsWith(separator) ? parent + name : parent + separator + name;
+    }
+
+    /** Unwrap one `RemoteResult`, tolerating a bare value from an older Host. */
+    function unwrapRemote(result) {
+      if (result === null || result === undefined) return undefined;
+      if (typeof result !== "object") return result;
+      if (result.ok === true) return result.value;
+      if (result.ok === false) return undefined;
+      return result;
+    }
+
+    /**
+     * Join the live loader entries with the profile's bundles.
+     *
+     * A bundle's rows name the module each patch inserts; the inventory names
+     * what the Loader actually holds, by entry id and module name. Matching on
+     * the entry id first keeps two rows of one module distinct; the module name
+     * is the fallback for a row the Loader no longer lists.
+     */
+    function pluginGraph(bundles, inventory) {
+      const entries = inventory !== null && typeof inventory === "object" && Array.isArray(inventory.entries) ? inventory.entries : [];
+      const byEntryId = new Map();
+      const byModule = new Map();
+      for (const entry of entries) {
+        if (entry === null || typeof entry !== "object") continue;
+        if (typeof entry.entryId === "string") byEntryId.set(entry.entryId, entry);
+        const module = typeof entry.moduleName === "string" ? entry.moduleName : "";
+        if (module === "") continue;
+        if (!byModule.has(module)) byModule.set(module, []);
+        byModule.get(module).push(entry);
+      }
+      const resolve = (row) => {
+        if (typeof row.entryId === "string" && byEntryId.has(row.entryId)) return byEntryId.get(row.entryId);
+        if (typeof row.moduleName === "string" && byModule.has(row.moduleName)) return byModule.get(row.moduleName)[0];
+        return undefined;
+      };
+      const groups = (Array.isArray(bundles) ? bundles : []).map((bundle) => {
+        const bundleRows = bundle !== null && typeof bundle === "object" && Array.isArray(bundle.rows) ? bundle.rows : [];
+        const rows = bundleRows.map((row, index) => {
+          const live = row !== null && typeof row === "object" ? resolve(row) : undefined;
+          return {
+            key: String(
+              row !== null && typeof row === "object"
+                ? row.rowId || row.entryId || row.moduleName || "row-" + index
+                : "row-" + index,
+            ),
+            moduleName: row !== null && typeof row === "object" && typeof row.moduleName === "string" ? row.moduleName : "",
+            entryId: row !== null && typeof row === "object" && typeof row.entryId === "string" ? row.entryId : "",
+            live: live !== undefined,
+            enabled: live === undefined ? true : live.enabled !== false,
+            fiberPhase:
+              live !== undefined && live.fiberPhase !== null && live.fiberPhase !== undefined ? String(live.fiberPhase) : "",
+          };
+        });
+        return {
+          name: bundle !== null && typeof bundle === "object" && typeof bundle.name === "string" ? bundle.name : "",
+          version: bundle !== null && typeof bundle === "object" && typeof bundle.version === "string" ? bundle.version : "",
+          source: bundle !== null && typeof bundle === "object" && typeof bundle.source === "string" ? bundle.source : "",
+          enabled: bundle !== null && typeof bundle === "object" && bundle.enabled === true,
+          availability:
+            bundle !== null && typeof bundle === "object" && typeof bundle.availability === "string"
+              ? bundle.availability
+              : "",
+          error: bundle !== null && typeof bundle === "object" && bundle.error !== undefined && bundle.error !== null
+            ? String(bundle.error.code === undefined ? bundle.error : bundle.error.code)
+            : "",
+          rows: rows,
+          disabled: rows.filter((row) => row.enabled === false).length,
+        };
+      });
+      const presets = inventory !== null && typeof inventory === "object" && Array.isArray(inventory.agentPresets)
+        ? inventory.agentPresets
+        : [];
+      return { groups, presets, entries };
+    }
+
+    /** One status dot: the only colour this page spends on state. */
+    function aboutDot(tone) {
+      const color =
+        tone === "on"
+          ? "var(--dsw-alias-state-success-primary, #2f9e5f)"
+          : tone === "warn"
+            ? "var(--dsw-alias-state-warn-primary, #c98a00)"
+            : "var(--dsw-alias-state-idle-primary, #b6b9c0)";
+      return h("span", { style: { width: 6, height: 6, borderRadius: 3, background: color, flex: "none" } });
+    }
+
+    /** About DSH: installation facts, the disk layout, and the plugin composition. */
+    function AboutSection(props) {
+      const t = props && typeof props.t === "function" ? props.t : (key) => key;
+      const listBundles = props ? props.listBundles : undefined;
+      const listInventory = props ? props.listInventory : undefined;
+      const [overview, setOverview] = useState({ phase: "loading", data: undefined, error: "" });
+      const [levels, setLevels] = useState({});
+      const [expanded, setExpanded] = useState(() => new Set());
+      const [plugins, setPlugins] = useState({ phase: "loading", bundles: undefined, inventory: undefined, error: "" });
+
+      const loadLevel = (directory, refresh) => {
+        setLevels((current) => ({
+          ...current,
+          [directory]: {
+            phase: "loading",
+            entries: current[directory] === undefined ? [] : current[directory].entries,
+            more: 0,
+            error: "",
+          },
+        }));
+        layoutRequest(directory, refresh).then((answer) => {
+          const payload = answer.payload;
+          if (payload === undefined) {
+            setLevels((current) => ({ ...current, [directory]: { phase: "unavailable", entries: [], more: 0, error: "" } }));
+            return;
+          }
+          if (payload.ok !== true) {
+            setLevels((current) => ({
+              ...current,
+              [directory]: {
+                phase: answer.status === 403 ? "forbidden" : "error",
+                entries: [],
+                more: 0,
+                error: String(payload.error === undefined ? "?" : payload.error),
+              },
+            }));
+            return;
+          }
+          setLevels((current) => ({
+            ...current,
+            [directory]: {
+              phase: "ready",
+              entries: Array.isArray(payload.entries) ? payload.entries : [],
+              more: typeof payload.more === "number" ? payload.more : 0,
+              error: "",
+            },
+          }));
+        });
+      };
+
+      const loadOverview = (refresh) => {
+        setOverview((current) => ({ ...current, phase: "loading", error: "" }));
+        layoutRequest(undefined, refresh).then((answer) => {
+          const payload = answer.payload;
+          if (payload === undefined || payload.ok !== true) {
+            setOverview({
+              phase: payload === undefined ? "unavailable" : answer.status === 403 ? "forbidden" : "error",
+              data: undefined,
+              error: payload === undefined ? "" : String(payload.error === undefined ? "?" : payload.error),
+            });
+            return;
+          }
+          const root = typeof payload.root === "string" ? payload.root : "";
+          setOverview({ phase: "ready", data: payload, error: "" });
+          if (root === "") return;
+          setExpanded(new Set([root]));
+          setLevels({
+            [root]: {
+              phase: "ready",
+              entries: Array.isArray(payload.entries) ? payload.entries : [],
+              more: typeof payload.more === "number" ? payload.more : 0,
+              error: "",
+            },
+          });
+        });
+      };
+
+      const loadPlugins = () => {
+        setPlugins((current) => ({ ...current, phase: "loading", error: "" }));
+        if (typeof listBundles !== "function") {
+          setPlugins({ phase: "unavailable", bundles: undefined, inventory: undefined, error: "" });
+          return;
+        }
+        const bundlesAnswer = Promise.resolve().then(listBundles);
+        const inventoryAnswer =
+          typeof listInventory === "function" ? Promise.resolve().then(listInventory) : Promise.resolve(undefined);
+        Promise.all([bundlesAnswer, inventoryAnswer])
+          .then(([bundlesRaw, inventoryRaw]) => {
+            const bundles = unwrapRemote(bundlesRaw);
+            const inventory = unwrapRemote(inventoryRaw);
+            const list = Array.isArray(bundles) ? bundles : bundles !== null && typeof bundles === "object" && Array.isArray(bundles.bundles) ? bundles.bundles : undefined;
+            if (list === undefined) {
+              setPlugins({ phase: "error", bundles: undefined, inventory: inventory, error: "remote" });
+              return;
+            }
+            setPlugins({ phase: "ready", bundles: list, inventory: inventory, error: "" });
+          })
+          .catch(() => setPlugins({ phase: "error", bundles: undefined, inventory: undefined, error: "network" }));
+      };
+
+      useEffect(() => {
+        loadOverview(false);
+        loadPlugins();
+      }, []);
+
+      const toggle = (directory) => {
+        setExpanded((current) => {
+          const next = new Set(current);
+          if (next.has(directory)) next.delete(directory);
+          else next.add(directory);
+          return next;
+        });
+        if (levels[directory] === undefined || levels[directory].phase === "unavailable") loadLevel(directory, false);
+      };
+
+      const hint = (text, depth) =>
+        h(
+          "div",
+          {
+            key: "hint-" + depth + "-" + text,
+            style: { paddingLeft: depth * 14 + 18, fontSize: 11, color: MUTED, lineHeight: 1.9 },
+          },
+          text,
+        );
+
+      const renderLevel = (directory, depth) => {
+        const level = levels[directory];
+        if (level === undefined) return null;
+        if (level.phase === "unavailable") return hint(t("aboutHostDown"), depth);
+        if (level.phase === "forbidden") return hint(t("aboutHostForbidden"), depth);
+        if (level.phase === "error") return hint(t("aboutHostFailed", { reason: level.error }), depth);
+        if (level.phase === "loading" && level.entries.length === 0) return hint(t("aboutScanning"), depth);
+        if (level.entries.length === 0) return hint(t("aboutEmptyDir"), depth);
+        const output = [];
+        for (const entry of level.entries) {
+          const path = childPath(directory, String(entry.name));
+          const isDirectory = entry.kind === "dir";
+          const open = isDirectory && expanded.has(path);
+          const size =
+            entry.kind === "link"
+              ? t("aboutLink")
+              : typeof entry.bytes === "number"
+                ? (entry.truncated === true ? t("aboutTruncated") + " " : "") + formatBytes(entry.bytes)
+                : "";
+          output.push(
+            h(
+              "div",
+              {
+                key: path,
+                onClick: isDirectory ? () => toggle(path) : undefined,
+                title: path,
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  minHeight: 24,
+                  paddingLeft: depth * 14,
+                  borderRadius: 4,
+                  cursor: isDirectory ? "pointer" : "default",
+                },
+              },
+              h(
+                "span",
+                {
+                  style: {
+                    width: 10,
+                    flex: "none",
+                    fontSize: 9,
+                    color: MUTED,
+                    textAlign: "center",
+                  },
+                },
+                isDirectory ? (open ? "\u25be" : "\u25b8") : "",
+              ),
+              h(
+                "span",
+                {
+                  style: {
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 12,
+                    color: isDirectory ? PRIMARY : SECONDARY,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  },
+                },
+                entry.name,
+              ),
+              size === ""
+                ? null
+                : h(
+                    "span",
+                    { style: { flex: "none", fontSize: 10.5, color: MUTED, fontFamily: "Consolas, monospace" } },
+                    size,
+                  ),
+            ),
+          );
+          if (open) output.push(h("div", { key: path + "/children" }, renderLevel(path, depth + 1)));
+        }
+        if (level.more > 0) output.push(hint(t("aboutMore", { count: level.more }), depth));
+        return output;
+      };
+
+      const data = overview.data;
+      const totals = data !== undefined && data.totals !== null && typeof data.totals === "object" ? data.totals : {};
+      const fact = (label, value, title) =>
+        value === "" || value === undefined
+          ? null
+          : h(
+              "div",
+              { key: "fact-" + label, style: { display: "flex", gap: 8, minWidth: 0, fontSize: 12 } },
+              h("span", { style: { flex: "none", width: 62, color: MUTED } }, label),
+              h(
+                "span",
+                {
+                  title: title === undefined ? value : title,
+                  style: {
+                    minWidth: 0,
+                    color: SECONDARY,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: "Consolas, monospace",
+                    fontSize: 11.5,
+                  },
+                },
+                value,
+              ),
+            );
+
+      const sizeLine = [];
+      if (typeof totals.APP === "number") sizeLine.push("APP " + formatBytes(totals.APP));
+      if (typeof totals.data === "number") sizeLine.push("data " + formatBytes(totals.data));
+      if (typeof totals.workspace === "number") sizeLine.push("workspace " + formatBytes(totals.workspace));
+
+      const treeBody =
+        overview.phase === "unavailable"
+          ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutHostDown"))
+          : overview.phase === "forbidden"
+            ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutHostForbidden"))
+            : overview.phase === "error"
+              ? h("div", { style: { fontSize: 11.5, color: "var(--dsw-alias-state-error-primary, #d9534f)" } }, t("aboutHostFailed", { reason: overview.error }))
+              : overview.phase === "loading" && data === undefined
+                ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutScanning"))
+                : data !== undefined
+                  ? renderLevel(data.root, 0)
+                  : null;
+
+      const graph = pluginGraph(
+        plugins.bundles,
+        plugins.inventory,
+      );
+      const graphBody =
+        plugins.phase === "unavailable"
+          ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutInventoryDown"))
+          : plugins.phase === "loading"
+            ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutInventoryLoading"))
+            : plugins.phase === "error"
+              ? h(
+                  "div",
+                  { style: { fontSize: 11.5, color: "var(--dsw-alias-state-error-primary, #d9534f)" } },
+                  t("aboutInventoryFailed", { reason: plugins.error }),
+                )
+              : h(
+                  "div",
+                  { style: { display: "flex", flexDirection: "column", gap: 8 } },
+                  graph.groups.map((bundle) => {
+                    const own = bundle.name === ID;
+                    const facts = [t("aboutEntries", { count: bundle.rows.length })];
+                    if (bundle.disabled > 0) facts.push(t("aboutDisabled", { count: bundle.disabled }));
+                    if (bundle.error !== "") facts.push(bundle.error);
+                    return h(
+                      "div",
+                      {
+                        key: "bundle-" + bundle.name,
+                        style: {
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 3,
+                          padding: "7px 9px",
+                          border: "0.5px solid " + BORDER,
+                          borderRadius: 7,
+                        },
+                      },
+                      h(
+                        "div",
+                        { style: { display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 } },
+                        aboutDot(bundle.enabled ? "on" : "off"),
+                        h(
+                          "span",
+                          {
+                            style: {
+                              minWidth: 0,
+                              fontSize: 12.5,
+                              fontWeight: 500,
+                              color: PRIMARY,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            },
+                          },
+                          bundle.name,
+                        ),
+                        own
+                          ? h(
+                              "span",
+                              {
+                                style: {
+                                  flex: "none",
+                                  fontSize: 10,
+                                  color: SECONDARY,
+                                  border: "0.5px solid " + BORDER,
+                                  borderRadius: 999,
+                                  padding: "0 5px",
+                                },
+                              },
+                              t("aboutOwnPackage"),
+                            )
+                          : null,
+                        bundle.version === ""
+                          ? null
+                          : h("span", { style: { flex: "none", fontSize: 10.5, color: MUTED } }, "v" + bundle.version),
+                      ),
+                      bundle.source === ""
+                        ? null
+                        : h(
+                            "div",
+                            {
+                              title: bundle.source,
+                              style: {
+                                paddingLeft: 12,
+                                fontSize: 10.5,
+                                color: MUTED,
+                                fontFamily: "Consolas, monospace",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              },
+                            },
+                            bundle.source,
+                          ),
+                      h("div", { style: { paddingLeft: 12, fontSize: 10.5, color: MUTED } }, facts.join(" \u00b7 ")),
+                      bundle.rows.length === 0
+                        ? null
+                        : h(
+                            "div",
+                            { style: { display: "flex", flexDirection: "column", gap: 1, paddingTop: 1 } },
+                            bundle.rows.map((row) =>
+                              h(
+                                "div",
+                                {
+                                  key: "row-" + bundle.name + "-" + row.key,
+                                  title: row.entryId === "" ? row.moduleName : row.entryId,
+                                  style: { display: "flex", alignItems: "center", gap: 6, paddingLeft: 20, minHeight: 20 },
+                                },
+                                aboutDot(row.enabled === false ? "off" : row.fiberPhase === "" ? "warn" : "on"),
+                                h(
+                                  "span",
+                                  {
+                                    style: {
+                                      minWidth: 0,
+                                      fontSize: 11,
+                                      color: row.enabled === false ? MUTED : SECONDARY,
+                                      fontFamily: "Consolas, monospace",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    },
+                                  },
+                                  row.moduleName,
+                                ),
+                                row.fiberPhase === ""
+                                  ? null
+                                  : h("span", { style: { flex: "none", fontSize: 10, color: MUTED } }, t("aboutFiber", { phase: row.fiberPhase })),
+                              ),
+                            ),
+                          ),
+                    );
+                  }),
+                  graph.presets.length === 0
+                    ? null
+                    : h(
+                        "div",
+                        { style: { display: "flex", flexDirection: "column", gap: 3, paddingTop: 2 } },
+                        h("div", { style: { fontSize: 11, color: MUTED } }, t("aboutAgentPresets")),
+                        graph.presets.map((preset, index) => {
+                          const rows = Array.isArray(preset.rows) ? preset.rows : [];
+                          return h(
+                            "div",
+                            {
+                              key: "preset-" + index,
+                              style: { display: "flex", flexDirection: "column", gap: 1, paddingLeft: 20 },
+                            },
+                            h(
+                              "div",
+                              { style: { fontSize: 11.5, color: SECONDARY } },
+                              String(preset.name === undefined ? preset.id === undefined ? "?" : preset.id : preset.name),
+                              " \u00b7 " + rows.length,
+                            ),
+                          );
+                        }),
+                      ),
+                );
+
+      const pane = (key, title, hintText, actions, body) =>
+        h(
+          "div",
+          {
+            key: key,
+            style: {
+              flex: "1 1 320px",
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              padding: "10px 12px",
+              border: "0.5px solid " + BORDER,
+              borderRadius: 8,
+              background: DETAIL_BG,
+            },
+          },
+          h(
+            "div",
+            { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 } },
+            h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+              h("div", { style: { fontSize: 13, fontWeight: 500, color: PRIMARY } }, title),
+              h("div", { style: { fontSize: 11, color: MUTED } }, hintText),
+            ),
+            actions,
+          ),
+          h("div", { style: { minHeight: 0, maxHeight: "60vh", overflow: "auto" } }, body),
+        );
+
+      return h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            padding: "4px 2px",
+            maxWidth: 760,
+            color: PRIMARY,
+            fontSize: 13,
+            lineHeight: 1.6,
+          },
+        },
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 } },
+          h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+            h("div", { style: { fontSize: 15, fontWeight: 600, color: PRIMARY } }, t("aboutTitle")),
+            h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutDescription")),
+          ),
+          h(ToolkitButton, {
+            label: t("aboutRefresh"),
+            disabled: overview.phase === "loading",
+            onClick: () => {
+              loadOverview(true);
+              loadPlugins();
+            },
+          }),
+        ),
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 1 } },
+          fact(t("aboutVersion"), data === undefined ? "" : String(data.version === undefined ? "" : data.version)),
+          fact(t("aboutProfile"), data === undefined ? "" : String(data.profile === undefined ? "" : data.profile)),
+          fact(t("aboutRoot"), data === undefined ? "" : String(data.root === undefined ? "" : data.root)),
+          fact(t("aboutHome"), data === undefined ? "" : String(data.home === undefined ? "" : data.home)),
+          sizeLine.length === 0
+            ? null
+            : h("div", { style: { display: "flex", gap: 8, fontSize: 11.5, color: MUTED } }, sizeLine.join(" \u00b7 ")),
+        ),
+        h(
+          "div",
+          { style: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" } },
+          pane("tree", t("aboutTreeTitle"), t("aboutTreeHint"), null, treeBody),
+          pane(
+            "plugins",
+            t("aboutPluginsTitle"),
+            t("aboutPluginsHint"),
+            plugins.phase === "ready" ? h("span", { style: { fontSize: 10.5, color: MUTED, flex: "none" } }, t("aboutEntries", { count: graph.groups.length })) : null,
+            graphBody,
+          ),
+        ),
+      );
+    }
+
     /** Panel body: the seat reports `sidebar`, `panel` and `tab` through `useTabInfo`. */
 
     /**
@@ -3565,6 +4234,35 @@ window.__ModuleLoader__.load({
           ),
         "fzl-toolkit: settings section",
       );
+
+      // About DSH: one settings page for the installation itself - the version
+      // and paths it runs from, the disk layout, and the plugins it composed.
+      ctx.effect(
+        () =>
+          ctx.slots.inject("settings.section", () =>
+            ctx.slots.register(
+              {
+                name: "settings.section",
+                id: "dsh-about",
+                order: 18,
+                label: () => t("aboutNav"),
+                locale: NS,
+                inject: () => {
+                  const remote = ctx.remote;
+                  if (remote === undefined || remote === null) return {};
+                  const manager = remote.pluginManager;
+                  const inventory = remote.pluginInventory;
+                  return {
+                    listBundles: manager === undefined || manager === null ? undefined : () => manager.listBundles(),
+                    listInventory: inventory === undefined || inventory === null ? undefined : () => inventory.list(),
+                  };
+                },
+              },
+              AboutSection,
+            ),
+          ),
+        "fzl-toolkit: about section",
+      );
     }
 
     exports.apply = apply;
@@ -3591,6 +4289,11 @@ window.__ModuleLoader__.load({
       usePluginView,
       ExecLogTitle,
       ToolkitSection,
+      AboutSection,
+      pluginGraph,
+      layoutUrl,
+      childPath,
+      unwrapRemote,
       FeatureCard,
       FeatureSwitches,
       featureFlags,

@@ -503,6 +503,224 @@ async function removeSession(ctx, home, sessionId) {
   return report;
 }
 
+/* ------------------------------------------------------------------ *
+ * The installation layout: what this DSH is made of, on disk.
+ *
+ * Both halves of the settings page read from here: the tree pane fetches
+ * one level at a time, and the header takes the same first level for its
+ * size summary. Sizes are deliberately bounded - a bounded scan answers
+ * `truncated: true` and the page prints `>=` instead of pretending to
+ * know a number it stopped counting.
+ * ------------------------------------------------------------------ */
+
+const ROUTE_LAYOUT = PREFIX + "/layout";
+const LAYOUT_MAX_ENTRIES = 500;
+const LAYOUT_SCAN_BUDGET_MS = 600;
+const LAYOUT_SCAN_MAX_ENTRIES = 20000;
+const LAYOUT_CACHE_MS = 20000;
+const LAYOUT_CACHE_LIMIT = 400;
+
+/** Directory scans, keyed by absolute path; sizes are the expensive part. */
+const layoutScans = new Map();
+
+/** The installation root that owns this data home. */
+function installRoot(home) {
+  const parent = path.dirname(home);
+  if (path.basename(parent).toLowerCase() === "data") return path.dirname(parent);
+  return home;
+}
+
+/**
+ * Resolve `target` only when it stays inside `root`.
+ *
+ * `path.relative` answers an absolute path when the two are on different
+ * drives and a `..` prefix when they diverge, so both are refused; a
+ * resolved path equal to the root itself is the root.
+ */
+function insideRoot(root, target) {
+  if (typeof target !== "string" || target.trim() === "") return undefined;
+  let resolved;
+  try {
+    resolved = path.resolve(target);
+  } catch (error) {
+    return undefined;
+  }
+  const relative = path.relative(root, resolved);
+  if (relative === "") return resolved;
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+  return resolved;
+}
+
+async function isDirectory(target) {
+  try {
+    return (await fs.stat(target)).isDirectory();
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Total bytes of one tree under a time and entry budget.
+ *
+ * Symlinks are counted as entries but never followed: a pnpm profile links
+ * its packages into `.pnpm`, and following those would walk the same files
+ * more than once - or forever, on a cycle.
+ */
+async function scanTreeBounded(directory) {
+  const deadline = Date.now() + LAYOUT_SCAN_BUDGET_MS;
+  let bytes = 0;
+  let files = 0;
+  let children = 0;
+  let visited = 0;
+  let truncated = false;
+  const stack = [directory];
+  while (stack.length > 0 && truncated === false) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (error) {
+      continue;
+    }
+    if (current === directory) children = entries.length;
+    for (const entry of entries) {
+      visited += 1;
+      if (visited > LAYOUT_SCAN_MAX_ENTRIES || Date.now() > deadline) {
+        truncated = true;
+        break;
+      }
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(child);
+        continue;
+      }
+      try {
+        const stats = await fs.stat(child);
+        bytes += stats.size;
+        files += 1;
+      } catch (error) {
+        // A link to a vanished target, or a file we may not stat, is skipped.
+      }
+    }
+  }
+  return { bytes, files, children, truncated };
+}
+
+/** One directory scan, reused for `LAYOUT_CACHE_MS`. */
+async function scanTreeCached(directory, refresh) {
+  const now = Date.now();
+  const cached = layoutScans.get(directory);
+  if (refresh !== true && cached !== undefined && now - cached.at < LAYOUT_CACHE_MS) return cached.value;
+  if (layoutScans.size > LAYOUT_CACHE_LIMIT) layoutScans.clear();
+  const value = await scanTreeBounded(directory);
+  layoutScans.set(directory, { at: now, value });
+  return value;
+}
+
+/** One directory level, with directory sizes resolved through the cache. */
+async function listLayoutLevel(directory, refresh) {
+  let dirents;
+  try {
+    dirents = await fs.readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    return { entries: [], total: 0, more: 0, error: "unreadable" };
+  }
+  const entries = [];
+  let listed = 0;
+  for (const dirent of dirents) {
+    if (listed >= LAYOUT_MAX_ENTRIES) break;
+    listed += 1;
+    const full = path.join(directory, dirent.name);
+    if (dirent.isDirectory()) {
+      const scan = await scanTreeCached(full, refresh);
+      entries.push({
+        name: dirent.name,
+        kind: "dir",
+        bytes: scan.bytes,
+        files: scan.files,
+        children: scan.children,
+        truncated: scan.truncated,
+      });
+      continue;
+    }
+    if (dirent.isSymbolicLink()) {
+      entries.push({ name: dirent.name, kind: "link" });
+      continue;
+    }
+    const stats = await fs.stat(full).catch(() => undefined);
+    entries.push({ name: dirent.name, kind: "file", bytes: stats === undefined ? 0 : stats.size });
+  }
+  entries.sort((left, right) => {
+    if (left.kind === right.kind) return left.name.localeCompare(right.name);
+    return left.kind === "dir" ? -1 : 1;
+  });
+  return { entries, total: dirents.length, more: Math.max(0, dirents.length - listed), error: undefined };
+}
+
+/** This installation's version, from the packaged manifest. */
+async function appVersion(appRoot) {
+  const manifest = path.join(appRoot, "resources", "app.asar", "package.json");
+  const candidates = [manifest, path.join(appRoot, "version")];
+  for (const file of candidates) {
+    let text;
+    try {
+      text = await fs.readFile(file, "utf8");
+    } catch (error) {
+      continue;
+    }
+    if (file === manifest) {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed.version === "string" && parsed.version !== "") return parsed.version;
+      } catch (error) {
+        // A manifest that is not JSON falls through to the plain version file.
+      }
+      continue;
+    }
+    const trimmed = text.trim();
+    if (trimmed !== "") return trimmed;
+  }
+  return "";
+}
+
+/** The profile directories this Home holds, `desktop` first when present. */
+async function profileNames(home) {
+  let dirents;
+  try {
+    dirents = await fs.readdir(path.join(home, "profiles"), { withFileTypes: true });
+  } catch (error) {
+    return [];
+  }
+  const names = dirents.filter((dirent) => dirent.isDirectory()).map((dirent) => dirent.name);
+  names.sort((left, right) => (left === right ? 0 : left === "desktop" ? -1 : right === "desktop" ? 1 : left.localeCompare(right)));
+  return names;
+}
+
+/** The whole picture: paths, version, profile, and the first level with sizes. */
+async function layoutOverview(home, refresh) {
+  const root = installRoot(home);
+  const appRoot = path.join(root, "APP");
+  const app = await isDirectory(appRoot);
+  const level = await listLayoutLevel(root, refresh);
+  const totals = {};
+  for (const entry of level.entries) {
+    if (entry.kind === "dir" && typeof entry.bytes === "number") totals[entry.name] = entry.bytes;
+  }
+  const profiles = await profileNames(home);
+  return {
+    root,
+    home,
+    app,
+    version: await appVersion(app ? appRoot : root),
+    profiles,
+    profile: profiles.length > 0 ? profiles[0] : "",
+    totals,
+    entries: level.entries,
+    total: level.total,
+    more: level.more,
+  };
+}
+
 /** Answer one request with JSON. */
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -687,6 +905,64 @@ export function apply(ctx) {
     "fzl-toolkit: delete route",
   );
 
+  // The installation layout: the settings page's tree pane asks for one level
+  // at a time, and its header takes the same answer for the size summary.
+  ctx.effect(
+    () =>
+      server.register({
+        kind: "exact",
+        path: ROUTE_LAYOUT,
+        handler: async (req, res) => {
+          if (!admitted(req)) {
+            sendJson(res, 403, { ok: false, error: "forbidden" });
+            return;
+          }
+          if (req.method !== "GET") {
+            sendJson(res, 405, { ok: false, error: "method-not-allowed" });
+            return;
+          }
+          let url;
+          try {
+            url = new URL(req.url === undefined ? ROUTE_LAYOUT : req.url, "http://dsh.local");
+          } catch (error) {
+            sendJson(res, 400, { ok: false, error: "bad-request" });
+            return;
+          }
+          const refresh = url.searchParams.get("refresh") === "1";
+          if (refresh) layoutScans.clear();
+          const home = dataHome();
+          const root = installRoot(home);
+          const requested = url.searchParams.get("path");
+          try {
+            if (requested === null) {
+              sendJson(res, 200, { ok: true, revision: 1, ...(await layoutOverview(home, refresh)) });
+              return;
+            }
+            const target = insideRoot(root, requested);
+            if (target === undefined) {
+              sendJson(res, 403, { ok: false, error: "forbidden-path" });
+              return;
+            }
+            if (!(await isDirectory(target))) {
+              sendJson(res, 404, { ok: false, error: "not-a-directory" });
+              return;
+            }
+            sendJson(res, 200, {
+              ok: true,
+              revision: 1,
+              root: root,
+              home: home,
+              path: target,
+              ...(await listLayoutLevel(target, refresh)),
+            });
+          } catch (error) {
+            sendJson(res, 500, { ok: false, error: String(error && error.message ? error.message : error) });
+          }
+        },
+      }),
+    "fzl-toolkit: layout route",
+  );
+
   // Translation through the Host translator service: a text already translated
   // for this Session comes from its durable cache, so the panel pays nothing for
   // reasoning the reader has already expanded.
@@ -735,6 +1011,13 @@ export function apply(ctx) {
 /** Internals exported so the Host logic can be exercised outside the Loader. */
 export const __internals__ = {
   dataHome,
+  installRoot,
+  insideRoot,
+  listLayoutLevel,
+  layoutOverview,
+  scanTreeBounded,
+  appVersion,
+  profileNames,
   listSessions,
   removeSession,
   removeSessionFiles,

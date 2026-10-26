@@ -87,7 +87,7 @@ function load() {
     clearTimeout,
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(readFileSync("D:/P/DSH/workspace/plugins/dsh-ui-exec-log/client.js", "utf8"), sandbox, {
+  vm.runInNewContext(readFileSync(new URL("./client.js", import.meta.url), "utf8"), sandbox, {
     filename: "client.js",
   });
   return registered.factory((name) => {
@@ -99,6 +99,7 @@ function load() {
 
 const ALL = [
   "plugins.bundle.config",
+  "settings.section",
   "settings.section",
   "shell.overlay",
   "sidebar.right.pane.tab",
@@ -132,15 +133,21 @@ flags.set("execLog", false);
 assert.deepEqual(names(), [
   "plugins.bundle.config",
   "settings.section",
+  "settings.section",
   "sidebar.workspaces.session.menu.item",
 ]);
 assert.deepEqual(fake.tabTypes, []);
 
-assert.deepEqual(names(), ["plugins.bundle.config", "settings.section", "sidebar.workspaces.session.menu.item"]);
+assert.deepEqual(names(), [
+  "plugins.bundle.config",
+  "settings.section",
+  "settings.section",
+  "sidebar.workspaces.session.menu.item",
+]);
 
 // Session deletion off: the row menu entry leaves.
 flags.set("sessionDelete", false);
-assert.deepEqual(names(), ["plugins.bundle.config", "settings.section"]);
+assert.deepEqual(names(), ["plugins.bundle.config", "settings.section", "settings.section"]);
 
 // Turning everything back on restores exactly the original seats.
 flags.set("execLog", true);
@@ -159,10 +166,75 @@ assert.deepEqual(
   [
       "plugins.bundle.config",
     "settings.section",
+    "settings.section",
     "shell.overlay",
       "sidebar.right.pane.tab",
     "sidebar.right.pane.tab.title",
   ],
 );
+
+// --- About DSH: the pure half of the layout page -------------------------
+
+const { pluginGraph, unwrapRemote, childPath, layoutUrl } = exports.__internals;
+
+// Path joining follows the separator the parent already uses.
+assert.equal(childPath("D:\\P\\DSH", "APP"), "D:\\P\\DSH\\APP");
+assert.equal(childPath("D:\\P\\DSH\\", "APP"), "D:\\P\\DSH\\APP");
+assert.equal(childPath("/usr/local", "bin"), "/usr/local/bin");
+assert.equal(childPath("", "APP"), "APP");
+
+// The route carries a level only when one is named.
+assert.equal(layoutUrl("", false), "/fzl-toolkit/layout");
+assert.equal(layoutUrl("D:\\P\\DSH", false), "/fzl-toolkit/layout?path=D%3A%5CP%5CDSH");
+assert.equal(layoutUrl(undefined, true), "/fzl-toolkit/layout?refresh=1");
+
+// Remote answers unwrap both ways, and a failure is `undefined` rather than a throw.
+assert.equal(unwrapRemote({ ok: true, value: [1] }).length, 1);
+assert.equal(unwrapRemote({ ok: false, error: { code: "x" } }), undefined);
+assert.deepEqual(unwrapRemote([1, 2]), [1, 2]);
+assert.equal(unwrapRemote(undefined), undefined);
+
+// A bundle row resolves to its live entry by entry id first, module name second.
+const bundles = [
+  {
+    name: "@deepseek-ai/dsh-base",
+    version: "1.0.0",
+    source: "installation",
+    enabled: true,
+    rows: [
+      { rowId: "a", moduleName: "@deepseek-ai/dsh-base", entryId: "entry-1" },
+      { rowId: "b", moduleName: "@deepseek-ai/dsh-sandbox-policy" },
+      { rowId: "c", moduleName: "@deepseek-ai/dsh-retired" },
+    ],
+  },
+  { name: "@local/dsh-ui-exec-log", enabled: false, rows: [] },
+];
+const inventory = {
+  entries: [
+    { entryId: "entry-1", moduleName: "@deepseek-ai/dsh-base", enabled: true, fiberPhase: "active" },
+    { entryId: "entry-2", moduleName: "@deepseek-ai/dsh-sandbox-policy", enabled: false, fiberPhase: "pending" },
+  ],
+  agentPresets: [{ name: "standard", rows: [{ moduleName: "x" }] }],
+};
+const graph = pluginGraph(bundles, inventory);
+assert.equal(graph.groups.length, 2);
+const base = graph.groups[0];
+assert.deepEqual(base.rows.map((row) => row.key), ["a", "b", "c"]);
+assert.deepEqual(base.rows.map((row) => row.live), [true, true, false]);
+assert.deepEqual(base.rows.map((row) => row.enabled), [true, false, true]);
+assert.deepEqual(base.rows.map((row) => row.fiberPhase), ["active", "pending", ""]);
+assert.equal(base.disabled, 1);
+assert.equal(graph.groups[1].enabled, false);
+assert.equal(graph.groups[1].rows.length, 0);
+assert.deepEqual(graph.presets, [{ name: "standard", rows: [{ moduleName: "x" }] }]);
+
+// Missing sides degrade to empty lists instead of throwing.
+const emptyGraph = pluginGraph(undefined, undefined);
+assert.equal(emptyGraph.groups.length, 0);
+assert.equal(emptyGraph.presets.length, 0);
+assert.equal(emptyGraph.entries.length, 0);
+const bareGraph = pluginGraph([{ name: "b" }], { entries: "nope" });
+assert.equal(bareGraph.groups.length, 1);
+assert.equal(bareGraph.groups[0].rows.length, 0);
 
 console.log("feature-selftest: ok");

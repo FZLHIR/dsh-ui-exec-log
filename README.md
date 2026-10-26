@@ -11,6 +11,7 @@ DSH 插件：右侧「执行轨迹」面板 + 会话删除。
   - 可选连线层、可选 CoT 翻译（走 Host `translator` 服务，匿名 provider 会把文本发给翻译服务）。
   - 面板右上「设置」弹窗内三个开关，状态持久化在 `localStorage`。
 - **会话删除**（侧栏会话菜单项）：删除磁盘会话并清理内存中的 Session/Agent 引用，不留下幽灵行。
+- **关于 DSH**（设置页「关于 DSH」）：版本、配置档、安装根与数据目录、三块体积；左栏实时目录树（点目录展开一层），右栏当前配置档的插件包与条目（启用状态、加载阶段、Agent 预设）。只读，不跟随符号链接。
 
 ## 安装
 
@@ -38,8 +39,8 @@ npm 暂不支持：包名在 `@local` 作用域下，无法发布到公共 regis
 ## 开发
 
 - `client.js`：客户端（Cordis client plugin，`window.__ModuleLoader__.load`）。
-- `index.js`：Host 半（会话删除与翻译路由）。
-- 自测：`node __model-selftest.mjs`、`node __feature-selftest.mjs`、`node __delete-selftest.mjs`。
+- `index.js`：Host 半（会话删除、翻译与安装布局路由）。
+- 自测：`node __model-selftest.mjs`、`node __feature-selftest.mjs`、`node __delete-selftest.mjs`、`node __layout-selftest.mjs`、`node __about-render-selftest.mjs`。
 
 ## 注意
 
