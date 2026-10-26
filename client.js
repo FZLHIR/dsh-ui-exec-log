@@ -459,6 +459,9 @@ window.__ModuleLoader__.load({
       };
     })();
 
+    /** Display step identity: index, turn, and the raw step numbers it merged. */
+    let traceStepModel = [];
+
     /** Survives a tab remount so the fold state is not reset by new activity. */
     const traceCollapsed = { value: null };
 
@@ -569,25 +572,29 @@ window.__ModuleLoader__.load({
       };
       const selected = traceBridge.get();
 
+      const used = new Set();
       for (const chat of chatGroups) {
         const turn = Number(chat.getAttribute("data-chat-turn"));
         if (!Number.isFinite(turn)) continue;
-        const siblings = chatGroups.filter((candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn);
-        const position = siblings.indexOf(chat);
-        const own = panelGroups
-          .filter((candidate) => Number(candidate.getAttribute("data-fzl-turn")) === turn)
-          .sort((left, right) => Number(left.getAttribute("data-fzl-step-index")) - Number(right.getAttribute("data-fzl-step-index")));
-        let target = own[position];
-        if (target === undefined) {
-          // The panel folds this turn: point at its turn row instead of another turn.
-          target = document.querySelector('[data-fzl-turn-head="' + turn + '"]');
-          if (target === null) {
-            target = [-1, 1]
-              .map((offset) => document.querySelector('[data-fzl-turn-head="' + (turn + offset) + '"]'))
-              .find((element) => element !== null);
-          }
+        let stepNumber;
+        try {
+          const parsed = JSON.parse(chat.getAttribute("data-chat-group-key") ?? "null");
+          const raw = Array.isArray(parsed) && typeof parsed[1] === "string" ? parsed[1] : "";
+          const match = /^(\d+):/.exec(raw);
+          if (match !== null) stepNumber = Number(match[1]);
+        } catch (error) {
+          stepNumber = undefined;
         }
-        if (target === undefined || target === null) continue;
+        if (stepNumber === undefined) continue;
+        const candidates = [turn, turn - 1, turn + 1];
+        const model = traceStepModel.find(
+          (entry) => candidates.includes(entry.turn) && Array.isArray(entry.rawSteps) && entry.rawSteps.includes(stepNumber),
+        );
+        if (model === undefined) continue;
+        const target = panelGroups.find((candidate) => Number(candidate.getAttribute("data-fzl-step-index")) === model.index);
+        if (target === undefined) continue;
+        if (used.has(model.index)) continue;
+        used.add(model.index);
         const button = chat.querySelector("button");
         const header = (button === null ? chat : button).getBoundingClientRect();
         const ownRect = target.getBoundingClientRect();
@@ -595,7 +602,6 @@ window.__ModuleLoader__.load({
         const active =
           selected !== null &&
           selected.kind === "step" &&
-          target.hasAttribute("data-fzl-step-index") &&
           Number(target.getAttribute("data-fzl-step-index")) === Number(selected.index);
         const visible = inside(target, listRegion);
         const listBounds = listRegion === null || listRegion === undefined ? null : listRegion.getBoundingClientRect();
@@ -691,29 +697,43 @@ window.__ModuleLoader__.load({
     }
 
     /** Scroll the conversation to a step (or its turn row) — the reverse direction. */
-    function traceRevealChatStep(turn, position) {
+    function traceRevealChatStep(turn, rawSteps) {
       if (typeof document === "undefined") return;
       const turns = Number.isFinite(turn) ? [turn, turn - 1, turn + 1] : [];
-      // Expand first, then wait for the expanded layout, then scroll: locating
-      // before the fold settles would be undone by the reflow.
+      const wanted = Array.isArray(rawSteps) && rawSteps.length > 0 ? rawSteps : [];
+      const first = wanted.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...wanted);
       const attempt = (tries) => {
         for (const candidate of turns) traceSetChatTurnCollapsed(candidate, false);
-        for (const candidate of turns) {
-          const own = [...document.querySelectorAll("[data-step-process]")].filter(
-            (group) => Number(group.getAttribute("data-chat-turn")) === candidate && traceVisible(group),
-          );
-          const target = own[position] ?? (own.length === 1 ? own[0] : undefined);
-          if (target !== undefined) {
-            target.scrollIntoView({ block: "center", behavior: "smooth" });
-            traceFlash(target);
-            return;
+        const groups = [...document.querySelectorAll("[data-step-process]")].filter((group) => {
+          const turnOfGroup = Number(group.getAttribute("data-chat-turn"));
+          return turns.includes(turnOfGroup) && traceVisible(group);
+        });
+        const parsed = groups.map((group) => {
+          let stepNumber;
+          try {
+            const key = JSON.parse(group.getAttribute("data-chat-group-key") ?? "null");
+            const raw = Array.isArray(key) && typeof key[1] === "string" ? key[1] : "";
+            const match = /^(\d+):/.exec(raw);
+            if (match !== null) stepNumber = Number(match[1]);
+          } catch (error) {
+            stepNumber = undefined;
           }
+          return { group, stepNumber };
+        });
+        const exact = parsed.find((entry) => entry.stepNumber !== undefined && wanted.includes(entry.stepNumber));
+        const nearest = exact === undefined
+          ? parsed.filter((entry) => entry.stepNumber !== undefined && entry.stepNumber <= first).pop()
+          : undefined;
+        const target = exact === undefined ? (nearest === undefined ? undefined : nearest.group) : exact.group;
+        if (target !== undefined) {
+          target.scrollIntoView({ block: "center", behavior: "smooth" });
+          traceFlash(target);
+          return;
         }
         if (tries < 20) setTimeout(() => attempt(tries + 1), 70);
       };
       setTimeout(() => attempt(0), 80);
     }
-
 
     function TraceDetail(props) {
       const t = props.t;
@@ -836,13 +856,14 @@ window.__ModuleLoader__.load({
       const useSession = props ? props.useSession : undefined;
       const sessionRunning = typeof useSession === "function" ? useSession((state) => state.running === true) : false;
       const snapshot = typeof useTrajectory === "function" ? useTrajectory((value) => value) : undefined;
+      const [boundsVersion, setBoundsVersion] = useState(0);
       const [turns, modelError] = useMemo(() => {
         try {
-          return [mergeTraceSteps(buildTurns(snapshot === undefined ? undefined : snapshot)), ""];
+          return [groupStepsByBounds(mergeTraceSteps(buildTurns(snapshot === undefined ? undefined : snapshot)), traceGroupBounds), ""];
         } catch (error) {
           return [[], String(error && error.message ? error.message : error)];
         }
-      }, [snapshot]);
+      }, [snapshot, boundsVersion]);
       const [selection, setSelection] = useState(() => traceBridge.get());
       const [width, setWidth] = useState(0);
       const [collapsedTurns, setCollapsedState] = useState(() => traceCollapsed.value ?? new Set());
@@ -872,6 +893,43 @@ window.__ModuleLoader__.load({
       useEffect(() => traceIntercept.subscribe(setIntercept), []);
       useEffect(() => traceLines.subscribe(setLines), []);
       useEffect(() => traceTranslation.subscribe(() => setCotVersion((value) => value + 1)), []);
+
+      // Track the conversation's own step grouping so the list shows the same steps.
+      useEffect(() => {
+        if (typeof document === "undefined") return undefined;
+        const timer = setInterval(() => {
+          const observed = new Map();
+          for (const group of document.querySelectorAll("[data-step-process]")) {
+            const turn = Number(group.getAttribute("data-chat-turn"));
+            if (!Number.isFinite(turn)) continue;
+            let stepNumber;
+            try {
+              const parsed = JSON.parse(group.getAttribute("data-chat-group-key") ?? "null");
+              const raw = Array.isArray(parsed) && typeof parsed[1] === "string" ? parsed[1] : "";
+              const match = /^(\d+):/.exec(raw);
+              if (match !== null) stepNumber = Number(match[1]);
+            } catch (error) {
+              stepNumber = undefined;
+            }
+            if (stepNumber === undefined) continue;
+            const list = observed.get(turn) ?? [];
+            if (!list.includes(stepNumber)) list.push(stepNumber);
+            observed.set(turn, list);
+          }
+          if (observed.size === 0) return;
+          let changed = false;
+          for (const [turn, list] of observed) {
+            list.sort((left, right) => left - right);
+            const old = traceGroupBounds.get(turn);
+            if (old === undefined || old.length !== list.length || old.some((value, index) => value !== list[index])) {
+              traceGroupBounds.set(turn, list);
+              changed = true;
+            }
+          }
+          if (changed) setBoundsVersion((value) => value + 1);
+        }, 700);
+        return () => clearInterval(timer);
+      }, []);
 
       // First run with data: start in turn mode (everything folded).
       useEffect(() => {
@@ -987,6 +1045,10 @@ window.__ModuleLoader__.load({
         }
       }
 
+      traceStepModel = groups
+        .filter((entry) => entry.kind === "step")
+        .map((entry) => ({ index: entry.index, turn: entry.turn, rawSteps: entry.step.rawSteps ?? [entry.step.step] }));
+
       const select = (next) => {
         traceBridge.set(next === null ? null : { ...next, source: "panel" });
         // Reverse locating: a click in the list moves the conversation.
@@ -1000,8 +1062,7 @@ window.__ModuleLoader__.load({
           } else if (next !== null && next.kind === "step") {
             const group = groups.find((entry) => entry.kind === "step" && entry.index === next.index);
             if (group !== undefined) {
-              const own = groups.filter((entry) => entry.kind === "step" && entry.turn === group.turn);
-              traceRevealChatStep(group.turn, own.findIndex((entry) => entry.index === group.index));
+              traceRevealChatStep(group.turn, group.step.rawSteps ?? [group.step.step]);
             }
           }
         } catch (error) {
