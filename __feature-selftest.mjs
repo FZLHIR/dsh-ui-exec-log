@@ -17,6 +17,11 @@ const react = {
   useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
   useEffect: () => {},
   useRef: (initial) => ({ current: initial }),
+  Component: class {
+    constructor(props) { this.props = props; this.state = {}; }
+    setState(next) { this.state = Object.assign({}, this.state, typeof next === "function" ? next(this.state) : next); }
+  },
+
 };
 
 const store = new Map();

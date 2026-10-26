@@ -1588,6 +1588,7 @@ window.__ModuleLoader__.load({
       "aboutLink": "链接",
       "aboutFiber": "阶段 {phase}",
       "aboutUnreadable": "无法读取",
+      "aboutRenderFailed": "「关于 DSH」渲染失败：{reason}",
     };
 
     /** English dictionary, checked against the Chinese key set. */
@@ -1762,6 +1763,7 @@ window.__ModuleLoader__.load({
       "aboutLink": "link",
       "aboutFiber": "phase {phase}",
       "aboutUnreadable": "unreadable",
+      "aboutRenderFailed": "The About DSH page failed to render: {reason}",
     };
 
     /** Argument keys worth showing as an action's target text, in priority order. */
@@ -3372,16 +3374,42 @@ window.__ModuleLoader__.load({
      */
     let aboutRemote;
 
+    /**
+     * One Remote namespace, or `undefined`.
+     *
+     * A namespace this plug-in may not call answers with a thrown error on
+     * access rather than `undefined`, and that access happens while Settings
+     * renders - one throw there blanks the whole panel. So every access is
+     * guarded, and a missing face degrades that pane only.
+     */
+    function remoteNamespace(name) {
+      try {
+        const remote = aboutRemote;
+        if (remote === undefined || remote === null) return undefined;
+        return remote[name];
+      } catch (error) {
+        return undefined;
+      }
+    }
+
     function remoteBundles() {
-      const manager = aboutRemote === undefined || aboutRemote === null ? undefined : aboutRemote.pluginManager;
-      if (manager === undefined || manager === null || typeof manager.listBundles !== "function") return undefined;
-      return manager.listBundles();
+      try {
+        const manager = remoteNamespace("pluginManager");
+        if (manager === undefined || manager === null || typeof manager.listBundles !== "function") return undefined;
+        return manager.listBundles();
+      } catch (error) {
+        return undefined;
+      }
     }
 
     function remoteInventory() {
-      const inventory = aboutRemote === undefined || aboutRemote === null ? undefined : aboutRemote.pluginInventory;
-      if (inventory === undefined || inventory === null || typeof inventory.list !== "function") return undefined;
-      return inventory.list();
+      try {
+        const inventory = remoteNamespace("pluginInventory");
+        if (inventory === undefined || inventory === null || typeof inventory.list !== "function") return undefined;
+        return inventory.list();
+      } catch (error) {
+        return undefined;
+      }
     }
 
     /** The layout route with an optional level and refresh flag. */
@@ -3490,7 +3518,7 @@ window.__ModuleLoader__.load({
     }
 
     /** About DSH: installation facts, the disk layout, and the plugin composition. */
-    function AboutSection(props) {
+    function AboutBody(props) {
       const t = props && typeof props.t === "function" ? props.t : (key) => key;
       const listBundles = props && typeof props.listBundles === "function" ? props.listBundles : remoteBundles;
       const listInventory = props && typeof props.listInventory === "function" ? props.listInventory : remoteInventory;
@@ -3987,6 +4015,54 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Keeps a render failure inside this page.
+     *
+     * A section that throws is unmounted by React, leaving the Settings content
+     * column blank with no clue why. This boundary turns that into one line
+     * naming the error, which is the difference between a bug report and a
+     * white page.
+     */
+    class AboutBoundary extends react.Component {
+      constructor(props) {
+        super(props);
+        this.state = { error: "" };
+      }
+
+      static getDerivedStateFromError(error) {
+        return {
+          error: String(
+            error !== null && error !== undefined && error.message !== undefined ? error.message : error,
+          ),
+        };
+      }
+
+      render() {
+        const t = this.props !== null && this.props !== undefined && typeof this.props.t === "function" ? this.props.t : (key) => key;
+        if (this.state.error !== "") {
+          return h(
+            "div",
+            {
+              style: {
+                padding: "12px 2px",
+                fontSize: 12,
+                lineHeight: 1.7,
+                color: "var(--dsw-alias-state-error-primary, #d9534f)",
+              },
+            },
+            t("aboutRenderFailed", { reason: this.state.error }),
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    /** The Settings seat: the boundary in front, the page behind it. */
+    function AboutSection(props) {
+      const t = props && typeof props.t === "function" ? props.t : (key) => key;
+      return h(AboutBoundary, { t: t }, h(AboutBody, props));
+    }
+
     /** Panel body: the seat reports `sidebar`, `panel` and `tab` through `useTabInfo`. */
 
     /**
@@ -4270,18 +4346,25 @@ window.__ModuleLoader__.load({
               {
                 name: "settings.section",
                 id: "dsh-about",
-                order: 18,
+                order: 100,
                 label: () => t("aboutNav"),
                 locale: NS,
+                // Best effort: a namespace this plug-in may not call throws on
+                // access, and the page then reads the Remote it captured in
+                // `apply`. Either way the section must not fail to mount.
                 inject: () => {
-                  const remote = ctx.remote;
-                  if (remote === undefined || remote === null) return {};
-                  const manager = remote.pluginManager;
-                  const inventory = remote.pluginInventory;
-                  return {
-                    listBundles: manager === undefined || manager === null ? undefined : () => manager.listBundles(),
-                    listInventory: inventory === undefined || inventory === null ? undefined : () => inventory.list(),
-                  };
+                  try {
+                    const remote = ctx.remote;
+                    if (remote === undefined || remote === null) return {};
+                    const manager = remote.pluginManager;
+                    const inventory = remote.pluginInventory;
+                    return {
+                      listBundles: manager === undefined || manager === null ? undefined : () => manager.listBundles(),
+                      listInventory: inventory === undefined || inventory === null ? undefined : () => inventory.list(),
+                    };
+                  } catch (error) {
+                    return {};
+                  }
                 },
               },
               AboutSection,
@@ -4316,6 +4399,7 @@ window.__ModuleLoader__.load({
       ExecLogTitle,
       ToolkitSection,
       AboutSection,
+      AboutBody,
       pluginGraph,
       layoutUrl,
       childPath,

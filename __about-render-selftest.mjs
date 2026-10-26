@@ -65,6 +65,11 @@ function createRuntime(fetchImpl) {
     }),
     useMemo: (factory) => factory(),
     useRef: (initial) => ({ current: initial }),
+  Component: class {
+    constructor(props) { this.props = props; this.state = {}; }
+    setState(next) { this.state = Object.assign({}, this.state, typeof next === "function" ? next(this.state) : next); }
+  },
+
     useState: (initial) => {
       const index = state.cursor;
       state.cursor += 1;
@@ -138,7 +143,7 @@ function textOf(node, out = []) {
 }
 
 const runtime = createRuntime();
-const AboutSection = runtime.module.__internals.AboutSection;
+const AboutSection = runtime.module.__internals.AboutBody;
 const hookState = runtime.state;
 assert.equal(typeof AboutSection, "function");
 
@@ -210,7 +215,7 @@ const downRuntime = createRuntime(async () => ({
   },
 }));
 const down = await mount(
-  downRuntime.module.__internals.AboutSection,
+  downRuntime.module.__internals.AboutBody,
   { t: t, listBundles: undefined, listInventory: undefined },
   downRuntime.state,
 );
