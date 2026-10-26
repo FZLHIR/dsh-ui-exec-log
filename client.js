@@ -84,6 +84,47 @@ window.__ModuleLoader__.load({
     const traceGroupBounds = new Map();
 
     /** Merge display steps so each turn has exactly the conversation's groups. */
+    /**
+     * Split a turn into the conversation's process groups.
+     *
+     * The chat flushes the pending reasoning/tool run and starts a new group at
+     * every assistant reply, so the group count of a turn equals its replies plus
+     * one. Merging our display steps on the same boundaries keeps the sidebar's
+     * step count equal to the conversation's.
+     */
+    function groupStepsByReply(turns) {
+      return turns.map((turn) => {
+        const groups = [];
+        let bucket = [];
+        const close = () => {
+          if (bucket.length > 0) groups.push(bucket);
+          bucket = [];
+        };
+        for (const step of turn.steps) {
+          bucket.push(step);
+          if (step.title !== "" || step.preview !== "") close();
+        }
+        close();
+        const steps = groups.map((members) => {
+          const first = members[0];
+          const merged = {
+            ...first,
+            actions: members.flatMap((member) => member.actions),
+            sequence: members.flatMap((member) => member.sequence ?? []),
+            rawSteps: members.flatMap((member) => (Array.isArray(member.rawSteps) ? member.rawSteps : [member.step])),
+            reasoning: members.map((member) => member.reasoning).filter((value) => value !== "").join("\n\n"),
+            startedAt: members.reduce((value, member) => (member.startedAt === null ? value : value === null ? member.startedAt : Math.min(value, member.startedAt)), null),
+            completedAt: members.reduce((value, member) => (member.completedAt === null ? value : value === null ? member.completedAt : Math.max(value, member.completedAt)), null),
+            input: members.reduce((sum, member) => sum + (member.input === null ? 0 : member.input), 0),
+            output: members.reduce((sum, member) => sum + (member.output === null ? 0 : member.output), 0),
+          };
+          if (members.some((member) => member.status === "error")) merged.status = "error";
+          return merged;
+        });
+        return { ...turn, steps: steps.map((step, index) => ({ ...step, displayStep: index + 1 })) };
+      });
+    }
+
     function groupStepsByBounds(turns, bounds) {
       if (bounds === undefined || bounds.size === 0) return turns;
       return turns.map((turn) => {
@@ -615,25 +656,16 @@ window.__ModuleLoader__.load({
       for (const chat of chatGroups) {
         const turn = Number(chat.getAttribute("data-chat-turn"));
         if (!Number.isFinite(turn)) continue;
-        let stepNumber;
-        try {
-          const parsed = JSON.parse(chat.getAttribute("data-chat-group-key") ?? "null");
-          const raw = Array.isArray(parsed) && typeof parsed[1] === "string" ? parsed[1] : "";
-          const match = /^(\d+):/.exec(raw);
-          if (match !== null) stepNumber = Number(match[1]);
-        } catch (error) {
-          stepNumber = undefined;
-        }
-        if (stepNumber === undefined) continue;
-        const candidates = [turn, turn - 1, turn + 1];
-        const model = traceStepModel.find(
-          (entry) => candidates.includes(entry.turn) && Array.isArray(entry.rawSteps) && entry.rawSteps.includes(stepNumber),
-        );
-        if (model === undefined) continue;
-        const target = panelGroups.find((candidate) => Number(candidate.getAttribute("data-fzl-step-index")) === model.index);
+        const siblings = chatGroups.filter((candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn);
+        const position = siblings.indexOf(chat);
+        const own = panelGroups
+          .filter((candidate) => Number(candidate.getAttribute("data-fzl-turn")) === turn)
+          .sort((left, right) => Number(left.getAttribute("data-fzl-step-index")) - Number(right.getAttribute("data-fzl-step-index")));
+        const target = own[position];
         if (target === undefined) continue;
-        if (used.has(model.index)) continue;
-        used.add(model.index);
+        const targetIndex = Number(target.getAttribute("data-fzl-step-index"));
+        if (used.has(targetIndex)) continue;
+        used.add(targetIndex);
         const button = chat.querySelector("button");
         const header = (button === null ? chat : button).getBoundingClientRect();
         const ownRect = target.getBoundingClientRect();
@@ -898,11 +930,11 @@ window.__ModuleLoader__.load({
       const [boundsVersion, setBoundsVersion] = useState(0);
       const [turns, modelError] = useMemo(() => {
         try {
-          return [groupStepsByBounds(mergeTraceSteps(buildTurns(snapshot === undefined ? undefined : snapshot)), traceGroupBounds), ""];
+          return [groupStepsByReply(mergeTraceSteps(buildTurns(snapshot === undefined ? undefined : snapshot))), ""];
         } catch (error) {
           return [[], String(error && error.message ? error.message : error)];
         }
-      }, [snapshot, boundsVersion]);
+      }, [snapshot]);
       const [selection, setSelection] = useState(() => traceBridge.get());
       const [width, setWidth] = useState(0);
       const [collapsedTurns, setCollapsedState] = useState(() => traceCollapsed.value ?? new Set());
@@ -932,43 +964,6 @@ window.__ModuleLoader__.load({
       useEffect(() => traceIntercept.subscribe(setIntercept), []);
       useEffect(() => traceLines.subscribe(setLines), []);
       useEffect(() => traceTranslation.subscribe(() => setCotVersion((value) => value + 1)), []);
-
-      // Track the conversation's own step grouping so the list shows the same steps.
-      useEffect(() => {
-        if (typeof document === "undefined") return undefined;
-        const timer = setInterval(() => {
-          const observed = new Map();
-          for (const group of document.querySelectorAll("[data-step-process]")) {
-            const turn = Number(group.getAttribute("data-chat-turn"));
-            if (!Number.isFinite(turn)) continue;
-            let stepNumber;
-            try {
-              const parsed = JSON.parse(group.getAttribute("data-chat-group-key") ?? "null");
-              const raw = Array.isArray(parsed) && typeof parsed[1] === "string" ? parsed[1] : "";
-              const match = /^(\d+):/.exec(raw);
-              if (match !== null) stepNumber = Number(match[1]);
-            } catch (error) {
-              stepNumber = undefined;
-            }
-            if (stepNumber === undefined) continue;
-            const list = observed.get(turn) ?? [];
-            if (!list.includes(stepNumber)) list.push(stepNumber);
-            observed.set(turn, list);
-          }
-          if (observed.size === 0) return;
-          let changed = false;
-          for (const [turn, list] of observed) {
-            list.sort((left, right) => left - right);
-            const old = traceGroupBounds.get(turn);
-            if (old === undefined || old.length !== list.length || old.some((value, index) => value !== list[index])) {
-              traceGroupBounds.set(turn, list);
-              changed = true;
-            }
-          }
-          if (changed) setBoundsVersion((value) => value + 1);
-        }, 700);
-        return () => clearInterval(timer);
-      }, []);
 
       // First run with data: start in turn mode (everything folded).
       useEffect(() => {
