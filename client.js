@@ -80,6 +80,45 @@ window.__ModuleLoader__.load({
      * text; the tool-only ones belong to the visible step before them. Merging
      * keeps the panel's step count equal to the conversation's.
      */
+    /** Official process-group boundaries per turn: the first step of each group. */
+    const traceGroupBounds = new Map();
+
+    /** Merge display steps so each turn has exactly the conversation's groups. */
+    function groupStepsByBounds(turns, bounds) {
+      if (bounds === undefined || bounds.size === 0) return turns;
+      return turns.map((turn) => {
+        const starts = bounds.get(turn.turn);
+        if (!Array.isArray(starts) || starts.length === 0) return turn;
+        const buckets = [];
+        for (const step of turn.steps) {
+          const raw = Array.isArray(step.rawSteps) && step.rawSteps.length > 0 ? step.rawSteps : [step.step];
+          const first = Math.min(...raw);
+          let index = 0;
+          for (let cursor = 0; cursor < starts.length; cursor += 1) if (first >= starts[cursor]) index = cursor;
+          if (buckets[index] === undefined) {
+            buckets[index] = { ...step, actions: [...step.actions], sequence: [...step.sequence], rawSteps: [...raw] };
+            continue;
+          }
+          const previous = buckets[index];
+          previous.actions = previous.actions.concat(step.actions);
+          previous.sequence = previous.sequence.concat(step.sequence);
+          previous.rawSteps = previous.rawSteps.concat(raw);
+          previous.reasoning =
+            step.reasoning === ""
+              ? previous.reasoning
+              : previous.reasoning === ""
+                ? step.reasoning
+                : previous.reasoning + "\n\n" + step.reasoning;
+          previous.startedAt = previous.startedAt === null ? step.startedAt : previous.startedAt;
+          previous.completedAt = step.completedAt === null ? previous.completedAt : step.completedAt;
+          previous.input = (previous.input === null ? 0 : previous.input) + (step.input === null ? 0 : step.input);
+          previous.output = (previous.output === null ? 0 : previous.output) + (step.output === null ? 0 : step.output);
+          if (step.status === "error") previous.status = "error";
+        }
+        return { ...turn, steps: buckets.filter((step) => step !== undefined).map((step, index) => ({ ...step, displayStep: index + 1 })) };
+      });
+    }
+
     function mergeTraceSteps(turns) {
       return turns.map((turn) => {
         const merged = [];
