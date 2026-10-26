@@ -1561,7 +1561,7 @@ window.__ModuleLoader__.load({
       "traceEmpty": "当前会话还没有可显示的轨迹；对话产生第一个步骤后出现。",
       "aboutNav": "关于 DSH",
       "aboutTitle": "关于 DSH",
-      "aboutDescription": "本次安装的版本、路径与规模；左侧是磁盘目录，右侧是当前配置档加载的插件。",
+      "aboutDescription": "这台机器上的 DSH 装在哪、数据放在哪、加载了哪些插件。",
       "aboutVersion": "版本",
       "aboutProfile": "配置档",
       "aboutRoot": "安装根",
@@ -1569,23 +1569,24 @@ window.__ModuleLoader__.load({
       "aboutRefresh": "重新扫描",
       "aboutScanning": "扫描中…",
       "aboutFramework": "文件框架",
-      "aboutFrameworkHint": "只列关键位置与职责，不逐个列文件。",
-      "aboutComposition": "{bundles} 个插件包 · {patches} 条补丁",
+      "aboutFrameworkHint": "点名称可收起或展开；这里只列关键位置，不逐个列文件。",
+      "aboutComposition": "这个配置档加载了 {bundles} 个插件包、{patches} 条补丁",
       "aboutItems": "{count} 项",
+      "aboutToggle": "点一下收起或展开",
       "aboutPluginError": "插件信息读取失败：{reason}",
-      "aboutRole_root": "包根：便携版一处装全，整体搬走仍可用",
-      "aboutRole_launcher": "启动入口：设置 DSH_HOME、TEMP、pnpm 与原生缓存",
-      "aboutRole_app": "应用本体：Electron 外壳与打包资源",
-      "aboutRole_runtime": "harness 运行时与内置插件（app.asar\\dsh）",
-      "aboutRole_data": "便携数据根：会变的东西都收在这",
-      "aboutRole_home": "harness home：配置、凭据、会话",
-      "aboutRole_profiles": "配置档：每份都是一次组合（bundle + patch）",
-      "aboutRole_profile": "当前配置档：cordis.yml 由 bundle 与 patch 生成",
-      "aboutRole_sessions": "会话日志：按工作区分目录",
-      "aboutRole_storages": "工作区注册表与投影缓存",
-      "aboutRole_attachments": "对话附件",
-      "aboutRole_runtimes": "内置 node / pnpm / python",
-      "aboutRole_workspace": "工作区：会话的 cwd",
+      "aboutRole_root": "这一份 DSH 的全部内容都在这里；整个目录搬走也能继续用",
+      "aboutRole_launcher": "双击它启动 DSH：会先把数据与运行环境指向本目录",
+      "aboutRole_app": "程序本体；升级 DSH 时整块替换，不要手动改",
+      "aboutRole_runtime": "DSH 的运行时和自带插件；平时不用动",
+      "aboutRole_data": "所有会变的数据：设置、对话、凭据",
+      "aboutRole_home": "你的数据都在这；备份或迁移只拷这一个目录",
+      "aboutRole_profiles": "插件组合；每个配置档决定加载哪些插件",
+      "aboutRole_profile": "当前使用的配置档；插件开关与补丁都记在这里",
+      "aboutRole_sessions": "每次对话的记录；删掉这里等于删掉对话，不可恢复",
+      "aboutRole_storages": "工作区清单与索引缓存；删掉会自动重建",
+      "aboutRole_attachments": "你上传的图片与文件",
+      "aboutRole_runtimes": "内置的 node / pnpm / python；重装依赖时会用到",
+      "aboutRole_workspace": "项目文件；新建会话时选的就是这里",
       "aboutRenderFailed": "「关于 DSH」渲染失败：{reason}",
     };
 
@@ -1734,7 +1735,7 @@ window.__ModuleLoader__.load({
       "traceEmpty": "No steps to show yet; the first step of this conversation will appear here.",
       "aboutNav": "About DSH",
       "aboutTitle": "About DSH",
-      "aboutDescription": "This installation's version, paths and size; the left pane is the disk layout, the right pane the plugins this profile loads.",
+      "aboutDescription": "Where DSH lives on this machine, where your data sits, and which plugins are loaded.",
       "aboutVersion": "Version",
       "aboutProfile": "Profile",
       "aboutRoot": "Install root",
@@ -1742,23 +1743,24 @@ window.__ModuleLoader__.load({
       "aboutRefresh": "Rescan",
       "aboutScanning": "Scanning...",
       "aboutFramework": "File framework",
-      "aboutFrameworkHint": "The places that matter and the job each does; individual files are not listed.",
-      "aboutComposition": "{bundles} bundles \u00b7 {patches} patch rows",
+      "aboutFrameworkHint": "Click a name to fold or unfold it; only the places that matter are listed, not every file.",
+      "aboutComposition": "This profile loads {bundles} bundles and {patches} patch rows",
       "aboutItems": "{count} items",
+      "aboutToggle": "Click to fold or unfold",
       "aboutPluginError": "Could not read the plugin facts: {reason}",
-      "aboutRole_root": "Package root: one portable tree, still valid after it moves",
-      "aboutRole_launcher": "Launcher: sets DSH_HOME, TEMP, pnpm and the native cache",
-      "aboutRole_app": "Application: the Electron shell and its packed resources",
-      "aboutRole_runtime": "Harness runtime and built-in plugins (app.asar\\dsh)",
-      "aboutRole_data": "Portable data root: everything mutable lives here",
-      "aboutRole_home": "Harness home: settings, credentials, Sessions",
-      "aboutRole_profiles": "Profiles: each one is a composition (bundles + patch)",
-      "aboutRole_profile": "Current profile: cordis.yml is generated from bundles and patches",
-      "aboutRole_sessions": "Session logs, grouped by Workspace",
-      "aboutRole_storages": "Workspace registry and projection cache",
-      "aboutRole_attachments": "Conversation attachments",
-      "aboutRole_runtimes": "Bundled node / pnpm / python",
-      "aboutRole_workspace": "Workspaces: the cwd of a Session",
+      "aboutRole_root": "Everything that makes up this DSH; the whole folder still works after it moves",
+      "aboutRole_launcher": "Double-click it to start DSH: it points the data and runtime at this folder first",
+      "aboutRole_app": "The application itself; replace it whole when upgrading, never by hand",
+      "aboutRole_runtime": "The DSH runtime and its built-in plugins; you rarely touch this",
+      "aboutRole_data": "Everything that changes: settings, conversations, credentials",
+      "aboutRole_home": "All your data lives here; back up or migrate this folder only",
+      "aboutRole_profiles": "Plugin compositions; each profile decides which plugins load",
+      "aboutRole_profile": "The profile in use; plugin switches and patches are recorded here",
+      "aboutRole_sessions": "One record per conversation; deleting it deletes the conversation for good",
+      "aboutRole_storages": "Workspace list and index cache; safe to rebuild if removed",
+      "aboutRole_attachments": "Images and files you uploaded",
+      "aboutRole_runtimes": "Bundled node / pnpm / python; used when reinstalling dependencies",
+      "aboutRole_workspace": "Your project files; this is what a new Session opens in",
       "aboutRenderFailed": "The About DSH page failed to render: {reason}",
     };
 
@@ -3361,6 +3363,30 @@ window.__ModuleLoader__.load({
 
     const ABOUT_ROUTE = "/fzl-toolkit/layout";
 
+    /** The client locale face, captured at apply time, for plugin metadata text. */
+    let aboutLocale;
+
+    /** Resolve one metadata value - a string or a locale map - to the active text. */
+    function metaText(value) {
+      if (typeof value === "string") return value;
+      if (value === null || value === undefined) return "";
+      try {
+        if (aboutLocale !== undefined && aboutLocale !== null && typeof aboutLocale.resolveText === "function") {
+          const resolved = aboutLocale.resolveText(value);
+          if (typeof resolved === "string") return resolved;
+        }
+      } catch (error) {
+        // A metadata value the locale cannot resolve stays silent.
+      }
+      return "";
+    }
+
+    /** The display name and one-line description of one plugin package. */
+    function metaFacts(meta) {
+      if (meta === null || meta === undefined || typeof meta !== "object") return { title: "", description: "" };
+      return { title: metaText(meta.title), description: metaText(meta.description) };
+    }
+
     /**
      * The client Remote face, captured at apply time.
      *
@@ -3462,6 +3488,7 @@ window.__ModuleLoader__.load({
             enabled: live === undefined ? true : live.enabled !== false,
             fiberPhase:
               live !== undefined && live.fiberPhase !== null && live.fiberPhase !== undefined ? String(live.fiberPhase) : "",
+            meta: row !== null && typeof row === "object" && row.meta !== null && typeof row.meta === "object" ? row.meta : undefined,
           };
         });
         return {
@@ -3469,6 +3496,7 @@ window.__ModuleLoader__.load({
           version: bundle !== null && typeof bundle === "object" && typeof bundle.version === "string" ? bundle.version : "",
           source: bundle !== null && typeof bundle === "object" && typeof bundle.source === "string" ? bundle.source : "",
           enabled: bundle !== null && typeof bundle === "object" && bundle.enabled === true,
+          meta: bundle !== null && typeof bundle === "object" && bundle.meta !== null && typeof bundle.meta === "object" ? bundle.meta : undefined,
           availability:
             bundle !== null && typeof bundle === "object" && typeof bundle.availability === "string"
               ? bundle.availability
@@ -3513,6 +3541,8 @@ window.__ModuleLoader__.load({
     function AboutBody(props) {
       const t = props && typeof props.t === "function" ? props.t : (key) => key;
       const [state, setState] = useState({ phase: "loading", data: undefined, error: "" });
+      const [collapsed, setCollapsed] = useState(() => new Set());
+      const [openBundles, setOpenBundles] = useState(() => new Set());
 
       const load = (refresh) => {
         setState((current) => ({ ...current, phase: "loading", error: "" }));
@@ -3546,6 +3576,35 @@ window.__ModuleLoader__.load({
       const graph = pluginGraph(plugins === undefined ? undefined : plugins.bundles, plugins === undefined ? undefined : plugins.inventory);
       const composition = data !== undefined && data.composition !== null && typeof data.composition === "object" ? data.composition : undefined;
 
+      const rowByKey = new Map(rows.map((row) => [String(row.key), row]));
+      const parents = new Set(rows.map((row) => String(row.parent === undefined ? "" : row.parent)).filter((key) => key !== ""));
+      const visibleRows = rows.filter((row) => {
+        let parent = String(row.parent === undefined ? "" : row.parent);
+        while (parent !== "") {
+          if (collapsed.has(parent)) return false;
+          const up = rowByKey.get(parent);
+          parent = up === undefined ? "" : String(up.parent === undefined ? "" : up.parent);
+        }
+        return true;
+      });
+      const toggleCollapsed = (key) => {
+        setCollapsed((current) => {
+          const next = new Set(current);
+          if (next.has(key)) next.delete(key);
+          else next.add(key);
+          return next;
+        });
+      };
+      const toggleBundle = (name) => {
+        setOpenBundles((current) => {
+          const next = new Set(current);
+          if (next.has(name)) next.delete(name);
+          else next.add(name);
+          return next;
+        });
+      };
+
+
       const fact = (label, value, title) =>
         value === "" || value === undefined
           ? null
@@ -3572,8 +3631,11 @@ window.__ModuleLoader__.load({
             );
 
       const frameworkRow = (row) => {
+        const key = String(row.key);
         const parts = String(row.path === undefined ? "" : row.path).split(/[\\/]/).filter((part) => part !== "");
         const name = parts.length === 0 ? String(row.path) : parts[parts.length - 1];
+        const hasChildren = parents.has(key);
+        const open = !collapsed.has(key);
         const metric =
           typeof row.bytes === "number"
             ? (row.truncated === true ? t("aboutTruncated") + " " : "") + formatBytes(row.bytes)
@@ -3583,7 +3645,9 @@ window.__ModuleLoader__.load({
         return h(
           "div",
           {
-            key: row.key,
+            key: key,
+            onClick: hasChildren ? () => toggleCollapsed(key) : undefined,
+            title: hasChildren ? t("aboutToggle") : row.path,
             style: {
               display: "flex",
               alignItems: "baseline",
@@ -3593,17 +3657,22 @@ window.__ModuleLoader__.load({
               paddingLeft: (typeof row.depth === "number" ? row.depth : 0) * 14,
               paddingTop: 2,
               paddingBottom: 2,
+              borderRadius: 4,
+              cursor: hasChildren ? "pointer" : "default",
               borderLeft: (typeof row.depth === "number" ? row.depth : 0) > 0 ? "1px solid " + BORDER : "none",
             },
           },
-          h("span", { style: { flex: "none", fontSize: 9, color: MUTED, width: 8 } }, row.kind === "dir" ? "\u25b8" : "\u00b7"),
+          h(
+            "span",
+            { style: { flex: "none", fontSize: 9, color: MUTED, width: 8, textAlign: "center" } },
+            hasChildren ? (open ? "\u25be" : "\u25b8") : row.kind === "dir" ? "\u00b7" : "\u00b7",
+          ),
           h(
             "div",
             { style: { flex: 1, minWidth: 0 } },
             h(
               "div",
               {
-                title: row.path,
                 style: {
                   fontSize: 12,
                   color: PRIMARY,
@@ -3615,7 +3684,11 @@ window.__ModuleLoader__.load({
               },
               name,
             ),
-            h("div", { style: { fontSize: 10.5, color: MUTED, lineHeight: 1.5 } }, t("aboutRole_" + String(row.role === undefined ? "" : row.role))),
+            h(
+              "div",
+              { style: { fontSize: 10.5, color: MUTED, lineHeight: 1.5 } },
+              t("aboutRole_" + String(row.role === undefined ? "" : row.role)),
+            ),
           ),
           metric === "" ? null : h("span", { style: { flex: "none", fontSize: 10.5, color: MUTED } }, metric),
         );
@@ -3679,7 +3752,7 @@ window.__ModuleLoader__.load({
                 )
               : state.phase === "loading" && data === undefined
                 ? h("div", { style: { fontSize: 11.5, color: MUTED } }, t("aboutScanning"))
-                : h("div", { style: { display: "flex", flexDirection: "column" } }, rows.map(frameworkRow), compositionBody);
+                : h("div", { style: { display: "flex", flexDirection: "column" } }, visibleRows.map(frameworkRow), compositionBody);
 
       const pluginError =
         plugins !== undefined && typeof plugins.error === "string" && plugins.error !== ""
@@ -3699,9 +3772,13 @@ window.__ModuleLoader__.load({
                   pluginError,
                   graph.groups.map((bundle) => {
                     const own = bundle.name === ID;
+                    const info = metaFacts(bundle.meta);
+                    const open = openBundles.has(bundle.name);
                     const facts = [t("aboutEntries", { count: bundle.rows.length })];
                     if (bundle.disabled > 0) facts.push(t("aboutDisabled", { count: bundle.disabled }));
                     if (bundle.error !== "") facts.push(bundle.error);
+                    const description =
+                      info.description !== "" ? info.description : bundle.source !== "" ? bundle.source : "";
                     return h(
                       "div",
                       {
@@ -3717,13 +3794,23 @@ window.__ModuleLoader__.load({
                       },
                       h(
                         "div",
-                        { style: { display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 } },
+                        {
+                          onClick: () => toggleBundle(bundle.name),
+                          title: t("aboutToggle"),
+                          style: { display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, cursor: "pointer" },
+                        },
+                        h(
+                          "span",
+                          { style: { flex: "none", fontSize: 9, color: MUTED, width: 8, textAlign: "center" } },
+                          open ? "\u25be" : "\u25b8",
+                        ),
                         aboutDot(bundle.enabled ? "on" : "off"),
                         h(
                           "span",
                           {
                             style: {
-                              minWidth: 0,
+                              flex: "none",
+                              maxWidth: "55%",
                               fontSize: 12.5,
                               fontWeight: 500,
                               color: PRIMARY,
@@ -3732,7 +3819,7 @@ window.__ModuleLoader__.load({
                               whiteSpace: "nowrap",
                             },
                           },
-                          bundle.name,
+                          own && info.title !== "" ? info.title + " / " + bundle.name : bundle.name,
                         ),
                         own
                           ? h(
@@ -3750,41 +3837,47 @@ window.__ModuleLoader__.load({
                               t("aboutOwnPackage"),
                             )
                           : null,
+                        description === ""
+                          ? null
+                          : h(
+                              "span",
+                              {
+                                title: description,
+                                style: {
+                                  flex: 1,
+                                  minWidth: 0,
+                                  fontSize: 10.5,
+                                  color: MUTED,
+                                  textAlign: "right",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                },
+                              },
+                              description,
+                            ),
                         bundle.version === ""
                           ? null
                           : h("span", { style: { flex: "none", fontSize: 10.5, color: MUTED } }, "v" + bundle.version),
                       ),
-                      bundle.source === ""
-                        ? null
-                        : h(
-                            "div",
-                            {
-                              title: bundle.source,
-                              style: {
-                                paddingLeft: 12,
-                                fontSize: 10.5,
-                                color: MUTED,
-                                fontFamily: "Consolas, monospace",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              },
-                            },
-                            bundle.source,
-                          ),
-                      h("div", { style: { paddingLeft: 12, fontSize: 10.5, color: MUTED } }, facts.join(" \u00b7 ")),
-                      bundle.rows.length === 0
+                      h(
+                        "div",
+                        { style: { paddingLeft: 22, fontSize: 10.5, color: MUTED } },
+                        facts.join(" \u00b7 "),
+                      ),
+                      open === false || bundle.rows.length === 0
                         ? null
                         : h(
                             "div",
                             { style: { display: "flex", flexDirection: "column", gap: 1, paddingTop: 1 } },
-                            bundle.rows.map((row) =>
-                              h(
+                            bundle.rows.map((row) => {
+                              const rowInfo = metaFacts(row.meta);
+                              return h(
                                 "div",
                                 {
                                   key: "row-" + bundle.name + "-" + row.key,
-                                  title: row.entryId === "" ? row.moduleName : row.entryId,
-                                  style: { display: "flex", alignItems: "center", gap: 6, paddingLeft: 20, minHeight: 20 },
+                                  title: rowInfo.description === "" ? row.entryId : rowInfo.description,
+                                  style: { display: "flex", alignItems: "center", gap: 6, paddingLeft: 22, minHeight: 20 },
                                 },
                                 aboutDot(row.enabled === false ? "off" : row.fiberPhase === "" ? "warn" : "on"),
                                 h(
@@ -3800,7 +3893,7 @@ window.__ModuleLoader__.load({
                                       whiteSpace: "nowrap",
                                     },
                                   },
-                                  row.moduleName,
+                                  rowInfo.title !== "" ? rowInfo.title : row.moduleName,
                                 ),
                                 row.fiberPhase === ""
                                   ? null
@@ -3809,8 +3902,8 @@ window.__ModuleLoader__.load({
                                       { style: { flex: "none", fontSize: 10, color: MUTED } },
                                       t("aboutFiber", { phase: row.fiberPhase }),
                                     ),
-                              ),
-                            ),
+                              );
+                            }),
                           ),
                     );
                   }),
@@ -4209,6 +4302,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       const t = ctx.locale.bind(NS);
       aboutRemote = ctx.remote === undefined ? undefined : ctx.remote;
+      aboutLocale = ctx.locale === undefined ? undefined : ctx.locale;
 
       ctx.effect(
         () => ctx.locale.register(NS, { zh, en }),

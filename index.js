@@ -656,20 +656,22 @@ function frameworkPlan(home, profile) {
   const data = path.dirname(home);
   const profiles = path.join(home, "profiles");
   const rows = [
-    { key: "root", path: root, depth: 0, role: "root" },
-    { key: "launcher", path: path.join(root, "DSH.cmd"), depth: 1, role: "launcher" },
-    { key: "app", path: app, depth: 1, role: "app" },
-    { key: "runtime", path: path.join(app, "resources", "app.asar", "dsh"), depth: 2, role: "runtime" },
-    { key: "data", path: data, depth: 1, role: "data" },
-    { key: "home", path: home, depth: 2, role: "home" },
-    { key: "profiles", path: profiles, depth: 3, role: "profiles" },
-    { key: "sessions", path: path.join(home, "sessions"), depth: 3, role: "sessions" },
-    { key: "storages", path: path.join(home, "storages"), depth: 3, role: "storages" },
-    { key: "attachments", path: path.join(home, "attachments"), depth: 3, role: "attachments" },
-    { key: "runtimes", path: path.join(home, "dsh-runtimes"), depth: 3, role: "runtimes" },
-    { key: "workspace", path: path.join(root, "workspace"), depth: 1, role: "workspace" },
+    { key: "root", path: root, depth: 0, role: "root", parent: "" },
+    { key: "launcher", path: path.join(root, "DSH.cmd"), depth: 1, role: "launcher", parent: "root" },
+    { key: "app", path: app, depth: 1, role: "app", parent: "root" },
+    { key: "runtime", path: path.join(app, "resources", "app.asar", "dsh"), depth: 2, role: "runtime", parent: "app" },
+    { key: "data", path: data, depth: 1, role: "data", parent: "root" },
+    { key: "home", path: home, depth: 2, role: "home", parent: "data" },
+    { key: "profiles", path: profiles, depth: 3, role: "profiles", parent: "home" },
+    { key: "sessions", path: path.join(home, "sessions"), depth: 3, role: "sessions", parent: "home" },
+    { key: "storages", path: path.join(home, "storages"), depth: 3, role: "storages", parent: "home" },
+    { key: "attachments", path: path.join(home, "attachments"), depth: 3, role: "attachments", parent: "home" },
+    { key: "runtimes", path: path.join(home, "dsh-runtimes"), depth: 3, role: "runtimes", parent: "home" },
+    { key: "workspace", path: path.join(root, "workspace"), depth: 1, role: "workspace", parent: "root" },
   ];
-  if (profile !== "") rows.splice(7, 0, { key: "profile", path: path.join(profiles, profile), depth: 4, role: "profile" });
+  if (profile !== "") {
+    rows.splice(7, 0, { key: "profile", path: path.join(profiles, profile), depth: 4, role: "profile", parent: "profiles" });
+  }
   return rows;
 }
 
@@ -680,7 +682,14 @@ async function frameworkRows(home, profile, refresh) {
   for (const row of frameworkPlan(home, profile)) {
     if ((await exists(row.path)) !== true) continue;
     const directory = await isDirectory(row.path);
-    const entry = { key: row.key, path: row.path, depth: row.depth, role: row.role, kind: directory ? "dir" : "file" };
+    const entry = {
+      key: row.key,
+      path: row.path,
+      depth: row.depth,
+      role: row.role,
+      parent: row.parent,
+      kind: directory ? "dir" : "file",
+    };
     if (directory) {
       try {
         entry.children = (await fs.readdir(row.path, { withFileTypes: true })).length;
@@ -727,6 +736,15 @@ async function compositionOf(home, profile) {
   return { profile, bundles, patchIds };
 }
 
+/** One display metadata record, reduced to the two fields the page shows. */
+function metaFacts(meta) {
+  if (meta === null || meta === undefined || typeof meta !== "object") return undefined;
+  const result = {};
+  if (meta.title !== undefined) result.title = meta.title;
+  if (meta.description !== undefined) result.description = meta.description;
+  return Object.keys(result).length === 0 ? undefined : result;
+}
+
 /** The Loader's live entries plus the profile's bundles, read through Host services. */
 async function pluginFacts(ctx) {
   const inventoryService = service(ctx, "pluginInventory");
@@ -736,12 +754,16 @@ async function pluginFacts(ctx) {
     if (inventoryService !== undefined && typeof inventoryService.list === "function") {
       const inventory = await inventoryService.list();
       facts.inventory = {
-        entries: (Array.isArray(inventory.entries) ? inventory.entries : []).map((entry) => ({
-          entryId: typeof entry.entryId === "string" ? entry.entryId : "",
-          moduleName: typeof entry.moduleName === "string" ? entry.moduleName : "",
-          enabled: entry.enabled !== false,
-          fiberPhase: typeof entry.fiberPhase === "string" ? entry.fiberPhase : "",
-        })),
+        entries: (Array.isArray(inventory.entries) ? inventory.entries : []).map((entry) => {
+          const meta = metaFacts(entry.meta);
+          return {
+            entryId: typeof entry.entryId === "string" ? entry.entryId : "",
+            moduleName: typeof entry.moduleName === "string" ? entry.moduleName : "",
+            enabled: entry.enabled !== false,
+            fiberPhase: typeof entry.fiberPhase === "string" ? entry.fiberPhase : "",
+            ...(meta === undefined ? {} : { meta }),
+          };
+        }),
         presets: (Array.isArray(inventory.agentPresets) ? inventory.agentPresets : []).map((preset) => ({
           name: typeof preset.name === "string" ? preset.name : typeof preset.id === "string" ? preset.id : "",
           rows: (Array.isArray(preset.rows) ? preset.rows : []).length,
@@ -754,19 +776,27 @@ async function pluginFacts(ctx) {
   try {
     if (manager !== undefined && typeof manager.listBundles === "function") {
       const bundles = await manager.listBundles();
-      facts.bundles = (Array.isArray(bundles) ? bundles : []).map((bundle) => ({
-        name: typeof bundle.name === "string" ? bundle.name : "",
-        version: typeof bundle.version === "string" ? bundle.version : "",
-        source: typeof bundle.source === "string" ? bundle.source : "",
-        availability: typeof bundle.availability === "string" ? bundle.availability : "",
-        enabled: bundle.enabled === true,
-        error: bundle.error !== undefined && bundle.error !== null ? String(bundle.error.code === undefined ? bundle.error : bundle.error.code) : "",
-        rows: (Array.isArray(bundle.rows) ? bundle.rows : []).map((row) => ({
-          rowId: typeof row.rowId === "string" ? row.rowId : "",
-          moduleName: typeof row.moduleName === "string" ? row.moduleName : "",
-          entryId: typeof row.entryId === "string" ? row.entryId : "",
-        })),
-      }));
+      facts.bundles = (Array.isArray(bundles) ? bundles : []).map((bundle) => {
+        const meta = metaFacts(bundle.meta);
+        return {
+          name: typeof bundle.name === "string" ? bundle.name : "",
+          version: typeof bundle.version === "string" ? bundle.version : "",
+          source: typeof bundle.source === "string" ? bundle.source : "",
+          availability: typeof bundle.availability === "string" ? bundle.availability : "",
+          enabled: bundle.enabled === true,
+          error: bundle.error !== undefined && bundle.error !== null ? String(bundle.error.code === undefined ? bundle.error : bundle.error.code) : "",
+          ...(meta === undefined ? {} : { meta }),
+          rows: (Array.isArray(bundle.rows) ? bundle.rows : []).map((row) => {
+            const rowMeta = metaFacts(row.meta);
+            return {
+              rowId: typeof row.rowId === "string" ? row.rowId : "",
+              moduleName: typeof row.moduleName === "string" ? row.moduleName : "",
+              entryId: typeof row.entryId === "string" ? row.entryId : "",
+              ...(rowMeta === undefined ? {} : { meta: rowMeta }),
+            };
+          }),
+        };
+      });
     }
   } catch (error) {
     if (facts.error === "") facts.error = String(error !== undefined && error !== null && error.message !== undefined ? error.message : error);

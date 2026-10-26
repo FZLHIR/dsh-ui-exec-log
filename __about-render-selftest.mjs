@@ -26,10 +26,11 @@ const OVERVIEW = {
   profile: "desktop",
   rows: [
     { key: "root", path: ROOT, depth: 0, role: "root", kind: "dir", children: 3, bytes: 856000000 },
-    { key: "launcher", path: ROOT + "\\DSH.cmd", depth: 1, role: "launcher", kind: "file", bytes: 2470 },
-    { key: "app", path: ROOT + "\\APP", depth: 1, role: "app", kind: "dir", children: 2, bytes: 467435193, truncated: false },
-    { key: "home", path: HOME, depth: 2, role: "home", kind: "dir", children: 9, bytes: 381634353, truncated: true },
-    { key: "workspace", path: ROOT + "\\workspace", depth: 1, role: "workspace", kind: "dir", children: 6, bytes: 3640925 },
+    { key: "launcher", path: ROOT + "\\DSH.cmd", depth: 1, role: "launcher", parent: "root", kind: "file", bytes: 2470 },
+    { key: "app", path: ROOT + "\\APP", depth: 1, role: "app", parent: "root", kind: "dir", children: 2, bytes: 467435193, truncated: false },
+    { key: "home", path: HOME, depth: 2, role: "home", parent: "data", kind: "dir", children: 9, bytes: 381634353, truncated: true },
+    { key: "sessions", path: HOME + "\\sessions", depth: 3, role: "sessions", parent: "home", kind: "dir", children: 2 },
+    { key: "workspace", path: ROOT + "\\workspace", depth: 1, role: "workspace", parent: "root", kind: "dir", children: 6, bytes: 3640925 },
   ],
   composition: {
     profile: "desktop",
@@ -48,6 +49,7 @@ const OVERVIEW = {
         version: "1.2.3",
         source: "installation",
         enabled: true,
+        meta: { title: "Base bundle", description: "core runtime and defaults" },
         rows: [{ rowId: "r1", moduleName: "@deepseek-ai/dsh-sandbox-policy", entryId: "e1" }],
       },
       {
@@ -177,6 +179,7 @@ assert.ok(text.includes(HOME), "data home renders");
 assert.ok(text.includes("aboutFramework"), "framework pane title");
 assert.ok(text.includes("aboutRole_root"), "the root row explains itself");
 assert.ok(text.includes("aboutRole_home"), "the data home row explains itself");
+assert.ok(text.includes("aboutRole_sessions"), "a nested row renders while its parent is open");
 assert.ok(text.includes("DSH.cmd"), "the launcher is named");
 assert.ok(text.includes("446 MB"), "the app size is formatted: " + text.slice(0, 160));
 assert.ok(text.includes("aboutTruncated"), "a cut-off scan is marked");
@@ -186,11 +189,11 @@ assert.ok(text.includes("aboutComposition(2,2)"), "composition counts render");
 assert.ok(text.includes("@deepseek-ai/dsh-base"));
 assert.ok(text.includes("@local/dsh-ui-exec-log"));
 
-// Plugin pane: bundles, live entry state, own-package badge, presets.
+// Plugin pane: bundles start folded, each carries a one-line description.
 assert.ok(text.includes("aboutPluginsTitle"));
-assert.ok(text.includes("@deepseek-ai/dsh-sandbox-policy"));
 assert.ok(text.includes("aboutOwnPackage"));
-assert.ok(text.includes("pending"));
+assert.ok(text.includes("core runtime and defaults"), "the bundle description renders");
+assert.ok(!text.includes("@deepseek-ai/dsh-sandbox-policy"), "bundle rows start folded");
 assert.ok(text.includes("aboutAgentPresets"));
 assert.ok(text.includes("aboutItems(3)"), "the preset entry count renders");
 
