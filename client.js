@@ -3363,6 +3363,27 @@ window.__ModuleLoader__.load({
 
     const ABOUT_ROUTE = "/fzl-toolkit/layout";
 
+    /**
+     * The client Remote face, captured at apply time.
+     *
+     * The Settings owner is not guaranteed to resolve an `inject` face for a
+     * section, so the plugin pane reads the same Remote namespaces from here
+     * when the registration's props arrive empty.
+     */
+    let aboutRemote;
+
+    function remoteBundles() {
+      const manager = aboutRemote === undefined || aboutRemote === null ? undefined : aboutRemote.pluginManager;
+      if (manager === undefined || manager === null || typeof manager.listBundles !== "function") return undefined;
+      return manager.listBundles();
+    }
+
+    function remoteInventory() {
+      const inventory = aboutRemote === undefined || aboutRemote === null ? undefined : aboutRemote.pluginInventory;
+      if (inventory === undefined || inventory === null || typeof inventory.list !== "function") return undefined;
+      return inventory.list();
+    }
+
     /** The layout route with an optional level and refresh flag. */
     function layoutUrl(path, refresh) {
       const parts = [];
@@ -3471,8 +3492,8 @@ window.__ModuleLoader__.load({
     /** About DSH: installation facts, the disk layout, and the plugin composition. */
     function AboutSection(props) {
       const t = props && typeof props.t === "function" ? props.t : (key) => key;
-      const listBundles = props ? props.listBundles : undefined;
-      const listInventory = props ? props.listInventory : undefined;
+      const listBundles = props && typeof props.listBundles === "function" ? props.listBundles : remoteBundles;
+      const listInventory = props && typeof props.listInventory === "function" ? props.listInventory : remoteInventory;
       const [overview, setOverview] = useState({ phase: "loading", data: undefined, error: "" });
       const [levels, setLevels] = useState({});
       const [expanded, setExpanded] = useState(() => new Set());
@@ -3547,20 +3568,24 @@ window.__ModuleLoader__.load({
 
       const loadPlugins = () => {
         setPlugins((current) => ({ ...current, phase: "loading", error: "" }));
-        if (typeof listBundles !== "function") {
-          setPlugins({ phase: "unavailable", bundles: undefined, inventory: undefined, error: "" });
-          return;
-        }
-        const bundlesAnswer = Promise.resolve().then(listBundles);
-        const inventoryAnswer =
-          typeof listInventory === "function" ? Promise.resolve().then(listInventory) : Promise.resolve(undefined);
+        // The Remote may still answer nothing: a profile without the manager
+        // keeps the pane, and the page says so instead of claiming a list.
+        const bundlesSource = listBundles;
+        const inventorySource = listInventory;
+        const bundlesAnswer = Promise.resolve().then(() => (typeof bundlesSource === "function" ? bundlesSource() : undefined));
+        const inventoryAnswer = Promise.resolve().then(() => (typeof inventorySource === "function" ? inventorySource() : undefined));
         Promise.all([bundlesAnswer, inventoryAnswer])
           .then(([bundlesRaw, inventoryRaw]) => {
             const bundles = unwrapRemote(bundlesRaw);
             const inventory = unwrapRemote(inventoryRaw);
-            const list = Array.isArray(bundles) ? bundles : bundles !== null && typeof bundles === "object" && Array.isArray(bundles.bundles) ? bundles.bundles : undefined;
+            const list =
+              Array.isArray(bundles)
+                ? bundles
+                : bundles !== null && typeof bundles === "object" && Array.isArray(bundles.bundles)
+                  ? bundles.bundles
+                  : undefined;
             if (list === undefined) {
-              setPlugins({ phase: "error", bundles: undefined, inventory: inventory, error: "remote" });
+              setPlugins({ phase: "unavailable", bundles: undefined, inventory: inventory, error: "" });
               return;
             }
             setPlugins({ phase: "ready", bundles: list, inventory: inventory, error: "" });
@@ -4195,6 +4220,7 @@ window.__ModuleLoader__.load({
      */
     function apply(ctx) {
       const t = ctx.locale.bind(NS);
+      aboutRemote = ctx.remote === undefined ? undefined : ctx.remote;
 
       ctx.effect(
         () => ctx.locale.register(NS, { zh, en }),
