@@ -656,7 +656,11 @@ window.__ModuleLoader__.load({
       for (const chat of chatGroups) {
         const turn = Number(chat.getAttribute("data-chat-turn"));
         if (!Number.isFinite(turn)) continue;
-        const siblings = chatGroups.filter((candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn);
+        // Position among every group of the turn, not only the visible ones:
+        // scrolling must never shift which list row a step points at.
+        const siblings = [...document.querySelectorAll("[data-step-process]")].filter(
+          (candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn,
+        );
         const position = siblings.indexOf(chat);
         const own = panelGroups
           .filter((candidate) => Number(candidate.getAttribute("data-fzl-turn")) === turn)
