@@ -545,6 +545,21 @@ window.__ModuleLoader__.load({
     /** Survives a tab remount so the fold state is not reset by new activity. */
     const traceCollapsed = { value: null };
 
+    /**
+     * The list step a positional focus request names.
+     *
+     * Both directions pair the k-th conversation group of a turn with the k-th
+     * list step of the same turn. A request whose index sits past the last step
+     * (a merged tail, or a timing race) resolves to the last step rather than to
+     * the first one, which is always wrong and easy to notice.
+     */
+    function pickFocusStep(own, position) {
+      if (!Array.isArray(own) || own.length === 0) return undefined;
+      if (typeof position !== "number" || !Number.isFinite(position)) return own[0];
+      const index = Math.min(Math.max(Math.trunc(position), 0), own.length - 1);
+      return own[index];
+    }
+
     /** One-shot focus request: the conversation names a step, the list decides. */
     const traceFocus = (() => {
       let value = null;
@@ -1011,19 +1026,8 @@ window.__ModuleLoader__.load({
           const candidates = Number.isFinite(request.turn) ? [request.turn, request.turn - 1, request.turn + 1] : [];
           for (const turn of candidates) {
             if (target !== undefined) break;
-            if (!Number.isFinite(request.stepNumber)) continue;
-            target = groups.find(
-              (entry) =>
-                entry.kind === "step" &&
-                entry.turn === turn &&
-                Array.isArray(entry.step.rawSteps) &&
-                entry.step.rawSteps.includes(request.stepNumber),
-            );
-          }
-          for (const turn of candidates) {
-            if (target !== undefined) break;
             const own = groups.filter((entry) => entry.kind === "step" && entry.turn === turn);
-            target = own[request.position] ?? own[0];
+            target = pickFocusStep(own, request.position);
           }
           if (target === undefined) return false;
           traceFocus.clear();
@@ -4161,22 +4165,16 @@ window.__ModuleLoader__.load({
           event.preventDefault();
           event.stopPropagation();
           const turn = Number(group.getAttribute("data-chat-turn"));
-          const key = group.getAttribute("data-chat-group-key") ?? "";
-          let stepNumber;
-          try {
-            const parsed = JSON.parse(key);
-            const raw = Array.isArray(parsed) && typeof parsed[1] === "string" ? parsed[1] : "";
-            const match = /^(\d+):/.exec(raw);
-            if (match !== null) stepNumber = Number(match[1]);
-          } catch (error) {
-            stepNumber = undefined;
-          }
-          const inTurn = [...document.querySelectorAll("[data-step-process]")].filter(
-            (candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn && traceVisible(candidate),
+          // The position is taken among every group of the turn, exactly like the
+          // connectors do. Counting only the visible ones would shift the index
+          // as soon as part of a long turn is scrolled out of view, and the list
+          // would select the wrong step.
+          const siblings = [...document.querySelectorAll("[data-step-process]")].filter(
+            (candidate) => Number(candidate.getAttribute("data-chat-turn")) === turn,
           );
-          const position = inTurn.indexOf(group);
-          if (Number.isFinite(turn) && (stepNumber !== undefined || position >= 0)) {
-            traceFocus.set({ turn, stepNumber, position });
+          const position = siblings.indexOf(group);
+          if (Number.isFinite(turn) && position >= 0) {
+            traceFocus.set({ turn, position });
           }
           try {
             ctx.sidebarRight.openTab(KIND);
@@ -4424,6 +4422,7 @@ window.__ModuleLoader__.load({
       traceSummary,
       traceFirstLine,
       paintTraceCurves,
+      pickFocusStep,
     };
     return module.exports;
   },

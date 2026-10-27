@@ -180,7 +180,18 @@ assert.deepEqual(
 
 // --- About DSH: the pure half of the layout page -------------------------
 
-const { pluginGraph, layoutUrl } = exports.__internals;
+const { pluginGraph, layoutUrl, pickFocusStep } = exports.__internals;
+
+// The positional focus request is clamped inside the turn, and never falls back
+// to the first row of a turn the click did not name.
+const focusSteps = [{ index: 0 }, { index: 1 }, { index: 2 }];
+assert.equal(pickFocusStep(focusSteps, 0).index, 0);
+assert.equal(pickFocusStep(focusSteps, 2).index, 2);
+assert.equal(pickFocusStep(focusSteps, 9).index, 2);
+assert.equal(pickFocusStep(focusSteps, -3).index, 0);
+assert.equal(pickFocusStep(focusSteps, undefined).index, 0);
+assert.equal(pickFocusStep([], 1), undefined);
+assert.equal(pickFocusStep(undefined, 1), undefined);
 
 // The route asks for the framework; `refresh=1` is the explicit rescan.
 assert.equal(layoutUrl(undefined, false), "/fzl-toolkit/layout");
